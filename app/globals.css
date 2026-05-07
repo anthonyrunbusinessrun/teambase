@@ -1,0 +1,195 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ── Geometry ────────────────────────────────── */
+    --radius: 0.75rem;
+
+    /* ── Light mode palette ───────────────────────── */
+    --background: 40 20% 98%;
+    --foreground: 220 15% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 15% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 15% 10%;
+
+    --primary: 220 15% 10%;
+    --primary-foreground: 40 20% 98%;
+
+    --secondary: 40 12% 94%;
+    --secondary-foreground: 220 12% 25%;
+
+    --muted: 40 10% 92%;
+    --muted-foreground: 220 8% 46%;
+
+    /* Muted champagne gold accent */
+    --accent: 38 42% 52%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 40 12% 88%;
+    --input: 40 12% 88%;
+    --ring: 38 42% 52%;
+
+    /* Status colors */
+    --status-online: 142 71% 38%;
+    --status-away: 38 92% 52%;
+    --status-offline: 220 8% 60%;
+  }
+
+  .dark {
+    /* ── Dark mode — premium cinematic ───────────── */
+    --background: 220 18% 7%;
+    --foreground: 40 15% 90%;
+
+    --card: 220 16% 10%;
+    --card-foreground: 40 15% 90%;
+
+    --popover: 220 16% 10%;
+    --popover-foreground: 40 15% 90%;
+
+    --primary: 40 15% 90%;
+    --primary-foreground: 220 18% 7%;
+
+    --secondary: 220 14% 14%;
+    --secondary-foreground: 40 12% 72%;
+
+    --muted: 220 14% 13%;
+    --muted-foreground: 220 8% 52%;
+
+    --accent: 38 55% 52%;
+    --accent-foreground: 220 18% 7%;
+
+    --destructive: 0 65% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 14% 16%;
+    --input: 220 14% 16%;
+    --ring: 38 55% 52%;
+
+    --status-online: 142 60% 42%;
+    --status-away: 38 88% 56%;
+    --status-offline: 220 8% 36%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    /* Prevent font size adjustment on iOS orientation change */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Remove spinner from number inputs */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  /* Smooth scroll */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Focus ring */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+}
+
+/* ── Mobile shell ──────────────────────────────────── */
+@layer components {
+  .mobile-container {
+    @apply relative mx-auto w-full max-w-mobile min-h-svh flex flex-col;
+  }
+
+  .mobile-content {
+    @apply flex-1 overflow-y-auto overscroll-none pb-20;
+    /* iOS momentum scrolling */
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .bottom-nav {
+    @apply fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-mobile
+           bg-background/80 backdrop-blur-xl border-t border-border
+           flex items-center justify-around px-2
+           safe-bottom z-50;
+    padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+    height: calc(4rem + max(env(safe-area-inset-bottom), 0.5rem));
+  }
+
+  .top-bar {
+    @apply sticky top-0 z-40 w-full bg-background/80 backdrop-blur-xl
+           border-b border-border flex items-center px-5
+           h-14;
+    padding-top: env(safe-area-inset-top);
+  }
+
+  /* Card variants */
+  .card-base {
+    @apply rounded-2xl bg-card border border-border shadow-card transition-shadow duration-200;
+  }
+
+  .card-interactive {
+    @apply card-base hover:shadow-card-hover active:scale-[0.99] cursor-pointer;
+  }
+
+  /* Status dot */
+  .status-dot {
+    @apply inline-block w-2 h-2 rounded-full flex-shrink-0;
+  }
+
+  .status-dot-online  { background: hsl(var(--status-online)); }
+  .status-dot-away    { background: hsl(var(--status-away)); }
+  .status-dot-offline { background: hsl(var(--status-offline)); }
+
+  /* Page section header */
+  .section-label {
+    @apply text-2xs font-medium uppercase tracking-widest text-muted-foreground px-5 pt-6 pb-2;
+  }
+}
+
+/* ── Desktop: centered mobile container ───────────── */
+@media (min-width: 640px) {
+  body {
+    @apply bg-muted;
+  }
+
+  .mobile-container {
+    @apply shadow-mobile rounded-3xl overflow-hidden border border-border my-4;
+    min-height: calc(100svh - 2rem);
+  }
+
+  .bottom-nav {
+    @apply rounded-b-3xl;
+  }
+}
+
+/* Safe area utilities */
+@layer utilities {
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+}
