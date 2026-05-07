@@ -10,7 +10,7 @@ import { BackButton } from "@/components/layout/BackButton";
 import { format } from "date-fns";
 
 interface Props {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 async function getTaskWithComments(id: string) {
@@ -50,10 +50,11 @@ async function getTaskWithComments(id: string) {
 }
 
 export default async function TaskDetailPage({ params }: Props) {
+  const { id } = await params;
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return null;
 
-  const data = await getTaskWithComments(params.id);
+  const data = await getTaskWithComments(id);
   if (!data) notFound();
 
   const { task, comments } = data;
