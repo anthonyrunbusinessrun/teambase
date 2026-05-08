@@ -1,23 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { airtableFolios, airtableCache } from "@/lib/db/schema";
+import { airtableFolios, airtableCache, appSettings } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 
-const HARDCODED_KEY  = process.env.AIRTABLE_API_KEY_BACKUP || "";
-const HARDCODED_BASE = "app8QxH2cjt0fueuW";
-const FOLIOS_TABLE   = "tblhifrn7wgf31Ryx";
-const FOLIOS_VIEW    = "viwp5Ojc7265hG56y";
+const BASE_ID   = process.env.AIRTABLE_BASE_ID  || "app8QxH2cjt0fueuW";
+const FOLIOS_TABLE = "tblhifrn7wgf31Ryx";
+const FOLIOS_VIEW  = "viwp5Ojc7265hG56y";
 
-function getKey(override?: string) {
-  if (override) return override.replace(/\s+/g,"");
-  return (process.env.AIRTABLE_API_KEY||"").replace(/\s+/g,"") || HARDCODED_KEY;
+async function resolveKey(override?: string): Promise<string> {
+  if (override) return override.replace(/\s+/g, "");
+  const envKey = (process.env.AIRTABLE_API_KEY || "").replace(/\s+/g, "");
+  if (envKey) return envKey;
+  // Fallback: read from DB settings
+  try {
+    const [row] = await db.select().from(appSettings).where(eq(appSettings.key, "airtable_api_key"));
+    if (row?.value) return row.value;
+  } catch {}
+  return "";
 }
-function getBase() { return (process.env.AIRTABLE_BASE_ID||"").replace(/\s+/g,"") || HARDCODED_BASE; }
 
-async function atFetch(path: string, params: Record<string,string> = {}, apiKey?: string) {
+async function atFetch(path: string, params: Record<string,string> = {}, apiKey: string) {
   const url = new URL(`https://api.airtable.com/v0/${path}`);
   Object.entries(params).forEach(([k,v]) => url.searchParams.set(k,v));
   const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${getKey(apiKey)}` },
+    headers: { Authorization: `Bearer ${apiKey}` },
     cache: "no-store",
   });
   if (!res.ok) {
@@ -27,14 +33,14 @@ async function atFetch(path: string, params: Record<string,string> = {}, apiKey?
   return res.json();
 }
 
-async function fetchAll(tableId: string, viewId?: string, apiKey?: string) {
+async function fetchAll(tableId: string, apiKey: string, viewId?: string) {
   const all: Array<{ id: string; fields: Record<string,unknown>; createdTime: string }> = [];
   let offset: string | undefined;
   do {
     const params: Record<string,string> = { pageSize: "100" };
     if (viewId) params.view = viewId;
     if (offset) params.offset = offset;
-    const data = await atFetch(`${getBase()}/${tableId}`, params, apiKey);
+    const data = await atFetch(`${BASE_ID}/${tableId}`, params, apiKey);
     for (const r of (data.records||[])) all.push({ id: r.id, fields: r.fields, createdTime: r.createdTime });
     offset = data.offset;
   } while (offset);
@@ -44,9 +50,14 @@ async function fetchAll(tableId: string, viewId?: string, apiKey?: string) {
 function pick(f: Record<string,unknown>, ...keys: string[]): string {
   for (const k of keys) {
     const v = f[k];
-    if (v !== undefined && v !== null && v !== "") {
-      if (Array.isArray(v)) return v.map(String).join(", ");
-      return String(v);
+    if (v !== undefined && v !== null && v !== "" && v !== "Untitled") {
+      if (Array.isArray(v)) {
+        const joined = v.map(String).filter(s => s && s !== "Untitled").join(", ");
+        if (joined) return joined;
+        continue;
+      }
+      const s = String(v).trim();
+      if (s && s !== "Untitled" && s !== "-") return s;
     }
   }
   return "";
@@ -75,52 +86,64 @@ function normStatus(s: string) {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const overrideKey = searchParams.get("key") || undefined;
-  
+  const apiKey = await resolveKey(overrideKey);
+
+  if (!apiKey) {
+    return NextResponse.json({
+      ok: false,
+      error: "No Airtable API key configured. Go to /settings and enter your PAT key.",
+    }, { status: 400 });
+  }
+
+  // Save key to DB if provided via ?key= param
+  if (overrideKey) {
+    await db.insert(appSettings).values({
+      key: "airtable_api_key", value: overrideKey.replace(/\s+/g,""), updatedAt: new Date(),
+    }).onConflictDoUpdate({
+      target: appSettings.key,
+      set: { value: overrideKey.replace(/\s+/g,""), updatedAt: new Date() },
+    });
+  }
+
   const results: Record<string,number> = {};
   const errors: string[] = [];
-  const effectiveKey = getKey(overrideKey);
 
-  // Test connection first
+  // Discover all tables
   let tables: Array<{id:string;name:string}> = [];
   try {
-    const meta = await atFetch(`meta/bases/${getBase()}/tables`, {}, overrideKey);
+    const meta = await atFetch(`meta/bases/${BASE_ID}/tables`, {}, apiKey);
     tables = (meta.tables||[]).map((t: any) => ({ id: t.id, name: t.name }));
     console.log(`[Sync] ${tables.length} tables:`, tables.map(t=>t.name).join(", "));
   } catch(e) {
-    errors.push(`meta: ${e}`);
-    // Return early if can't connect
-    return NextResponse.json({
-      ok: false,
-      keyLen: effectiveKey.length,
-      base: getBase(),
-      error: "Cannot connect to Airtable. API key may be expired. Go to /settings to update it.",
-      errors,
-    });
+    return NextResponse.json({ ok: false, error: String(e), hint: "Check your API key in /settings" }, { status: 401 });
   }
 
   // Sync Folios (priority)
   try {
-    const records = await fetchAll(FOLIOS_TABLE, FOLIOS_VIEW, overrideKey);
-    const fieldSample = Object.keys(records[0]?.fields||{}).join(", ");
-    console.log(`[Sync] Folios: ${records.length}. Fields: ${fieldSample}`);
-    
+    const records = await fetchAll(FOLIOS_TABLE, apiKey, FOLIOS_VIEW);
+    const fieldNames = Object.keys(records[0]?.fields||{});
+    console.log(`[Sync] Folios: ${records.length} records. Fields: ${fieldNames.join(", ")}`);
+
     for (const r of records) {
       const f = r.fields;
       const row = {
-        id: r.id, baseId: getBase(), tableId: FOLIOS_TABLE,
-        name:            pick(f,"Name","Folio Name","Project Name","Project","Title","Record Name") || "Untitled",
-        client:          pick(f,"Client","Client Name","Account","Company","Customer","Organization") || "—",
+        id: r.id, baseId: BASE_ID, tableId: FOLIOS_TABLE,
+        name:            pick(f,"Name","Folio Name","Project Name","Project","Title","Record Name") || r.id,
+        client:          pick(f,"Client","Client Name","Account","Company","Customer","Organization"),
         status:          normStatus(pick(f,"Status","Stage","Phase","State")),
-        category:        pick(f,"Category","Type","Folio Type","Service Type","Service","Division","Department") || "",
+        category:        pick(f,"Category","Type","Folio Type","Service Type","Service","Division","Segment"),
         startDate:       pick(f,"Start Date","Start","Date Started","Contract Start","Begin Date") || null,
         endDate:         pick(f,"End Date","End","Due Date","Contract End","Completion Date","Deadline","Close Date") || null,
-        manager:         pick(f,"Project Manager","Manager","Account Manager","Lead","Owner","Assigned To") || "—",
-        contractValue:   pickNum(f,"Contract Value","Value","Budget","Revenue","Total","Amount","Annual Value","Deal Value","MRR","ARR"),
-        percentComplete: pickNum(f,"% Complete","Percent Complete","Progress","Completion","Percent"),
-        type:            pick(f,"Type","Folio Type","Category","Service","Project Type","Engagement Type") || "—",
-        priority:        pick(f,"Priority","Urgency","Importance") || "—",
-        description:     pick(f,"Description","Notes","Details","Summary","Scope","Overview") || "",
-        tags:            JSON.stringify(Array.isArray(f.Tags)?f.Tags.map(String):Array.isArray(f.Labels)?f.Labels.map(String):[]),
+        manager:         pick(f,"Project Manager","Manager","Account Manager","Lead","Owner","Assigned To","Salesperson"),
+        contractValue:   pickNum(f,"Contract Value","Value","Budget","Revenue","Total","Amount","Annual Value","MRR","ARR","Deal Value","Price"),
+        percentComplete: pickNum(f,"% Complete","Percent Complete","Progress","Completion","Done %"),
+        type:            pick(f,"Type","Folio Type","Category","Service","Project Type","Engagement Type"),
+        priority:        pick(f,"Priority","Urgency","Importance"),
+        description:     pick(f,"Description","Notes","Details","Summary","Scope","Overview","Notes/Comments"),
+        tags:            JSON.stringify(
+          Array.isArray(f.Tags)?f.Tags.map(String).filter(Boolean):
+          Array.isArray(f.Labels)?f.Labels.map(String).filter(Boolean):[]
+        ),
         rawFields:       JSON.stringify(f),
         airtableCreatedAt: r.createdTime,
         synced_at:       new Date(),
@@ -142,11 +165,11 @@ export async function GET(req: NextRequest) {
   for (const t of tables) {
     if (t.id === FOLIOS_TABLE) continue;
     try {
-      const records = await fetchAll(t.id, undefined, overrideKey);
+      const records = await fetchAll(t.id, apiKey);
       for (const r of records) {
         await db.insert(airtableCache).values({
-          id: `${getBase()}:${t.id}:${r.id}`,
-          baseId: getBase(), tableName: t.name, recordId: r.id,
+          id: `${BASE_ID}:${t.id}:${r.id}`,
+          baseId: BASE_ID, tableName: t.name, recordId: r.id,
           fields: JSON.stringify(r.fields), syncedAt: new Date(),
         }).onConflictDoUpdate({
           target: airtableCache.id,
@@ -154,18 +177,13 @@ export async function GET(req: NextRequest) {
         });
       }
       results[t.name] = records.length;
-      console.log(`[Sync] ${t.name}: ${records.length}`);
     } catch(e) {
-      errors.push(`${t.name}: ${String(e).slice(0,80)}`);
+      errors.push(`${t.name}: ${String(e).slice(0,100)}`);
     }
   }
 
   return NextResponse.json({
-    ok: true,
-    keyLen: effectiveKey.length,
-    base: getBase(),
-    tables: tables.map(t=>t.name),
-    synced: results,
-    errors,
+    ok: true, keyLen: apiKey.length, base: BASE_ID,
+    tables: tables.map(t=>t.name), synced: results, errors,
   });
 }

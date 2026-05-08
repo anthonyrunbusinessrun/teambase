@@ -331,3 +331,11 @@ export const airtableCache = pgTable(
 
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type AirtableFolioRow = typeof airtableFolios.$inferSelect;
+
+// ── App Settings (key/value store for API keys etc) ───────────────────────
+export const appSettings = pgTable("app_settings", {
+  key:       text("key").primaryKey(),
+  value:     text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: text("updated_by"),
+});
