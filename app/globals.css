@@ -376,3 +376,9 @@
   .folio-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .folio-tabs::-webkit-scrollbar { display: none; }
 }
+
+/* ── Folio two-panel — collapse to single column on mobile ─── */
+@media (max-width: 640px) {
+  .folio-two-panel { flex-direction: column !important; }
+  .folio-two-panel > *:first-child { width: 100% !important; position: static !important; }
+}
