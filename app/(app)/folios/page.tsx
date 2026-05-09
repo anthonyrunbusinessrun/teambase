@@ -1,34 +1,50 @@
-import { TopBar } from "@/components/layout/TopBar";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
-import { airtableFolios } from "@/lib/db/schema";
+import { airtableFolios, airtableCache } from "@/lib/db/schema";
 import { desc } from "drizzle-orm";
-import { FoliosTable } from "@/components/folios/FoliosTable";
-import { FolioStats } from "@/components/folios/FolioStats";
-import { getFolios, getFolioStats } from "@/lib/airtable/boss";
-import type { NormalizedFolio } from "@/lib/airtable/boss";
+import { TopBar } from "@/components/layout/TopBar";
+import { GroupedFoliosView } from "@/components/folios/GroupedFoliosView";
 import { SyncButton } from "@/components/folios/SyncButton";
 import Link from "next/link";
-import { Key } from "lucide-react";
+import { Key, RefreshCw } from "lucide-react";
 
-export const metadata = { title: "Folios" };
+export const metadata = { title: "Folios — BOSS" };
 export const dynamic = "force-dynamic";
 
-async function getFromDB(): Promise<NormalizedFolio[]> {
+// Get categories from cache
+async function getCategories() {
+  try {
+    const rows = await db.select().from(airtableCache)
+      .where(require("drizzle-orm").eq(airtableCache.tableName, "Categories"));
+    return rows.map(r => {
+      try {
+        const f = JSON.parse(r.fields) as Record<string,unknown>;
+        return {
+          id: r.recordId,
+          code: String(f["Value Code/Title"] || ""),
+          group: String(f.Group || ""),
+        };
+      } catch { return null; }
+    }).filter(Boolean) as Array<{id:string;code:string;group:string}>;
+  } catch { return []; }
+}
+
+async function getFoliosFromDB() {
   try {
     const rows = await db.select().from(airtableFolios)
       .orderBy(desc(airtableFolios.synced_at)).limit(500);
-    if (!rows.length) return [];
     return rows.map(r => ({
-      id: r.id, name: r.name || "Untitled", client: r.client || "—",
-      status: r.status || "Unknown", category: r.category || "",
-      startDate: r.startDate, endDate: r.endDate, manager: r.manager || "—",
-      contractValue: r.contractValue ? parseFloat(r.contractValue) : null,
-      percentComplete: r.percentComplete ? parseFloat(r.percentComplete) : null,
-      type: r.type || "—", priority: r.priority || "—",
-      tags: r.tags ? (() => { try { return JSON.parse(r.tags!); } catch { return []; } })() : [],
+      id: r.id,
+      name: r.name || "Untitled",
+      group: r.type || "",        // we store Group in the type field
+      category: r.category || "", // sub-category like "3.9 Archive"
+      status: r.status || "Unknown",
       description: r.description || "",
+      manager: r.manager || "",
+      vsfs: 0, asfs: 0,
+      active: r.status === "Active",
+      rawFields: r.rawFields || "{}",
     }));
   } catch { return []; }
 }
@@ -37,75 +53,49 @@ export default async function FoliosPage() {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return null;
 
-  let folios = await getFromDB();
-  let source: "db" | "live" | "error" = "db";
-  let errorMsg: string | null = null;
+  const [folios, categories] = await Promise.all([getFoliosFromDB(), getCategories()]);
 
-  if (folios.length === 0) {
+  // Parse raw fields to get Group directly
+  const enrichedFolios = folios.map(f => {
     try {
-      folios = await getFolios();
-      source = folios.length > 0 ? "live" : "error";
-      if (folios.length === 0) errorMsg = "No records returned — API key may be expired";
-    } catch(e) {
-      errorMsg = String(e);
-      source = "error";
-    }
-  }
+      const raw = JSON.parse(f.rawFields) as Record<string,unknown>;
+      const groupArr = Array.isArray(raw.Group) ? raw.Group as string[] : [];
+      const groupVal = groupArr[0] || f.group || "";
+      const vsfs = typeof raw.VSFs === "number" ? raw.VSFs : 0;
+      const asfs = typeof raw.ASFs === "number" ? raw.ASFs : 0;
+      const active = typeof raw.Active === "number" ? raw.Active : 0;
+      const tmLink = (raw.Teamwork as any)?.url || raw["TM Link"] as string || "";
+      const catIds = Array.isArray(raw.Category) ? raw.Category as string[] : [];
+      return { ...f, group: groupVal, vsfs, asfs, active, tmLink, catIds };
+    } catch { return { ...f, vsfs: 0, asfs: 0, active: 0, tmLink: "", catIds: [] }; }
+  });
 
-  const stats = await getFolioStats(folios);
-  const categories = Array.from(new Set(
-    folios.map(f => f.category || f.type || "").filter(Boolean)
-  )).sort();
+  const hasData = enrichedFolios.length > 0;
 
   return (
     <>
       <TopBar
         title="Folios — BOSS"
-        subtitle={source === "db"
-          ? `${stats.total} records synced · ${stats.active} active`
-          : source === "live"
-          ? `${stats.total} records live from Airtable`
-          : "Airtable connection needed"}
+        subtitle={hasData ? `${enrichedFolios.length} folios · ${categories.length} categories` : "No data synced"}
         right={<SyncButton />}
       />
-      <div className="page-content space-y-5">
-
-        {/* API Key error state */}
-        {(errorMsg || source === "error") && (
-          <div className="card-accent p-5 flex items-start gap-4">
-            <div className="w-10 h-10 rounded flex items-center justify-center flex-shrink-0"
-              style={{ background: "hsl(var(--crimson) / 0.1)" }}>
-              <Key size={20} style={{ color: "hsl(var(--crimson))" }} />
-            </div>
-            <div className="flex-1">
-              <p className="heading-sm mb-1">Airtable API Key Needed</p>
-              <p className="text-sm text-muted-foreground mb-3" style={{ fontFamily: "'Barlow', sans-serif" }}>
-                {errorMsg || "Cannot connect to Airtable."} Your Personal Access Token may have expired.
-              </p>
-              <div className="flex gap-2 flex-wrap">
-                <Link href="/settings" className="btn-primary" style={{ fontSize: "0.72rem" }}>
-                  <Key size={12} /> Update API Key in Settings
-                </Link>
-                <SyncButton />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {folios.length > 0 ? (
-          <>
-            <FolioStats stats={stats} />
-            <FoliosTable folios={folios} categories={categories} />
-          </>
-        ) : !errorMsg ? (
-          <div className="card-base p-12 text-center">
-            <div className="heading-sm mb-2">No Folios Yet</div>
-            <p className="text-sm text-muted-foreground mb-4">
-              Click Sync to pull all data from your BOSS Airtable base.
+      <div className="page-content space-y-4">
+        {!hasData ? (
+          <div className="card-base p-10 text-center">
+            <div className="heading-md mb-2">No Folios Synced</div>
+            <p className="text-sm text-muted-foreground mb-5">
+              Connect your Airtable BOSS base to see your folios organized by group.
             </p>
-            <SyncButton large />
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+              <SyncButton large />
+              <Link href="/settings" className="btn-outline">
+                <Key size={13} /> Update API Key
+              </Link>
+            </div>
           </div>
-        ) : null}
+        ) : (
+          <GroupedFoliosView folios={enrichedFolios} categories={categories} />
+        )}
       </div>
     </>
   );
