@@ -1,0 +1,374 @@
+"use client";
+import { useState } from "react";
+import { ExternalLink, User, Briefcase, ChevronDown, ChevronRight, Search, Star, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+
+interface Applicant {
+  id: string;
+  "Full Name"?: string;
+  Email?: string;
+  Phone?: string;
+  Stage?: string;
+  "Date Applied"?: string;
+  Source?: string;
+  "Visa / Work Authorization"?: string;
+  "Role Applied"?: string;
+  [key: string]: unknown;
+}
+interface Role {
+  id: string;
+  "Role Title"?: string;
+  Department?: string;
+  Status?: string;
+}
+interface Interview {
+  id: string;
+  Score?: number;
+  Outcome?: string;
+  Recommendation?: string;
+}
+
+const STAGE_META: Record<string, { color: string; bg: string; icon: any; order: number }> = {
+  "New":        { color: "hsl(200 80% 42%)",  bg: "hsl(200 80% 42%/0.1)",  icon: AlertCircle, order: 1 },
+  "Reviewing":  { color: "hsl(270 65% 52%)",  bg: "hsl(270 65%52%/0.1)",   icon: Star,        order: 2 },
+  "Interview":  { color: "hsl(38 90% 48%)",   bg: "hsl(38 90%48%/0.1)",    icon: Clock,       order: 3 },
+  "Offer":      { color: "hsl(142 71% 38%)",  bg: "hsl(142 71%38%/0.1)",   icon: CheckCircle, order: 4 },
+  "Hired":      { color: "hsl(142 71% 30%)",  bg: "hsl(142 71%30%/0.08)",  icon: CheckCircle, order: 5 },
+  "Rejected":   { color: "hsl(0 60% 45%)",    bg: "hsl(0 60%45%/0.08)",    icon: XCircle,     order: 6 },
+};
+
+const DEPT_COLORS: Record<string, string> = {
+  "Operations":   "hsl(var(--crimson))",
+  "Technology":   "hsl(200 80% 42%)",
+  "Administration":"hsl(270 65% 52%)",
+  "Maintenance":  "hsl(38 90% 48%)",
+  "Compliance":   "hsl(142 71% 38%)",
+  "Management":   "hsl(220 57% 40%)",
+  "Training":     "hsl(25 90% 50%)",
+};
+
+export function PeoplebookDashboard({ applicants, roles, interviews, stages, openRoles, newApplicants }: {
+  applicants: Applicant[];
+  roles: Role[];
+  interviews: Interview[];
+  stages: Record<string, number>;
+  openRoles: Role[];
+  newApplicants: number;
+}) {
+  const [tab, setTab] = useState<"pipeline"|"roles"|"applicants">("pipeline");
+  const [search, setSearch] = useState("");
+  const [selectedStage, setSelectedStage] = useState<string>("All");
+  const [expandedApplicant, setExpandedApplicant] = useState<string | null>(null);
+
+  // Roles by dept
+  const rolesByDept: Record<string, Role[]> = {};
+  for (const r of roles) {
+    const d = r.Department || "Other";
+    (rolesByDept[d] = rolesByDept[d] || []).push(r);
+  }
+
+  // Filtered applicants
+  const filteredApplicants = applicants.filter(a => {
+    const q = search.toLowerCase();
+    const name = (a["Full Name"] || "").toLowerCase();
+    const email = (a.Email || "").toLowerCase();
+    if (q && !name.includes(q) && !email.includes(q)) return false;
+    if (selectedStage !== "All" && (a.Stage || "New") !== selectedStage) return false;
+    return true;
+  });
+
+  const stageOrder = Object.entries(stages).sort(([a], [b]) =>
+    (STAGE_META[a]?.order || 99) - (STAGE_META[b]?.order || 99)
+  );
+
+  const TABS = [
+    { id: "pipeline", label: "Pipeline" },
+    { id: "roles",    label: `Open Roles (${openRoles.length})` },
+    { id: "applicants", label: `All Applicants (${applicants.length})` },
+  ] as const;
+
+  return (
+    <div className="space-y-4">
+      {/* Stats row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: "Total Applicants", value: applicants.length, color: "hsl(var(--foreground))" },
+          { label: "New / Unreviewed", value: newApplicants, color: "hsl(200 80% 42%)" },
+          { label: "Open Roles", value: openRoles.length, color: "hsl(var(--crimson))" },
+          { label: "In Interview", value: stages["Interview"] || 0, color: "hsl(38 90% 48%)" },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="card-base p-4">
+            <div className="stat-number" style={{ color }}>{value}</div>
+            <div className="label-caps mt-1">{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* PeopleBook promo card */}
+      <div className="card-base overflow-hidden" style={{ borderLeft: "3px solid hsl(var(--crimson))" }}>
+        <div className="flex items-center justify-between p-4 flex-wrap gap-3">
+          <div>
+            <div className="heading-sm text-foreground" style={{ fontSize: "1rem" }}>PeopleBook — Public Job Portal</div>
+            <p className="text-sm text-muted-foreground mt-0.5" style={{ fontFamily: "'Barlow',sans-serif" }}>
+              Rayland Inc. recruiting portal · Stable Engineering // Design Innovation // Perpetual Service
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className="label-caps px-2 py-1 rounded"
+              style={{ background: "hsl(142 71% 38%/0.1)", color: "hsl(142 71% 38%)", fontSize: "0.6rem" }}>
+              ● LIVE
+            </span>
+            <a href="https://www.peoplebook.app/" target="_blank" rel="noopener noreferrer"
+              className="btn-primary" style={{ fontSize: "0.72rem", padding: "0.4rem 1rem" }}>
+              <ExternalLink size={12} /> Open Portal
+            </a>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="card-base overflow-hidden">
+        <div className="flex border-b border-border overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id as any)}
+              className="px-4 py-2.5 whitespace-nowrap border-b-2 transition-all flex-shrink-0"
+              style={{
+                fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 700,
+                fontSize: "0.72rem", letterSpacing: "0.07em", textTransform: "uppercase",
+                borderBottomColor: tab === t.id ? "hsl(var(--crimson))" : "transparent",
+                color: tab === t.id ? "hsl(var(--crimson))" : "hsl(var(--muted-foreground))",
+                background: tab === t.id ? "hsl(var(--crimson)/0.04)" : "transparent",
+              }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Pipeline view */}
+        {tab === "pipeline" && (
+          <div className="p-4 space-y-3">
+            {stageOrder.length === 0 ? (
+              <p className="text-sm text-muted-foreground p-4 text-center">No applicants yet.</p>
+            ) : stageOrder.map(([stage, count]) => {
+              const meta = STAGE_META[stage] || { color:"hsl(var(--muted-foreground))", bg:"hsl(var(--muted))", icon:User, order:99 };
+              const Icon = meta.icon;
+              const stageApplicants = applicants.filter(a => (a.Stage || "New") === stage)
+                .sort((a, b) => (b["Date Applied"] || "").localeCompare(a["Date Applied"] || ""));
+              return (
+                <div key={stage} className="card-base overflow-hidden"
+                  style={{ borderLeft: `3px solid ${meta.color}` }}>
+                  <div className="flex items-center gap-3 px-4 py-3" style={{ background: meta.bg }}>
+                    <Icon size={15} style={{ color: meta.color, flexShrink: 0 }} />
+                    <span className="heading-sm flex-1" style={{ color: meta.color, fontSize: "0.9rem" }}>{stage}</span>
+                    <span className="label-caps" style={{ fontSize: "0.65rem" }}>{count} applicant{count !== 1 ? "s" : ""}</span>
+                  </div>
+                  <div>
+                    {stageApplicants.map(a => (
+                      <div key={a.id} className="flex items-center gap-3 px-4 py-2.5 border-t border-border hover:bg-muted/10">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+                          style={{ background: meta.bg }}>
+                          <span style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:800, fontSize:"0.75rem", color:meta.color }}>
+                            {(a["Full Name"]||"?").charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground">{a["Full Name"] || "—"}</p>
+                          <p className="label-caps" style={{ fontSize: "0.58rem" }}>
+                            {a.Email || ""}{a["Date Applied"] ? ` · Applied ${a["Date Applied"]}` : ""}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {a.Source && <span className="label-caps" style={{ fontSize:"0.55rem", opacity:0.6 }}>{a.Source}</span>}
+                          {a["Visa / Work Authorization"] && (
+                            <span className="label-caps px-1.5 py-0.5 rounded" style={{
+                              background: "hsl(142 71% 38%/0.1)", color: "hsl(142 71% 38%)", fontSize: "0.55rem"
+                            }}>✓ {a["Visa / Work Authorization"]}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Roles view */}
+        {tab === "roles" && (
+          <div className="p-4 space-y-4">
+            {Object.entries(rolesByDept).sort(([a],[b])=>a.localeCompare(b)).map(([dept, deptRoles]) => {
+              const color = DEPT_COLORS[dept] || "hsl(var(--muted-foreground))";
+              return (
+                <div key={dept}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="w-2 h-2 rounded-full" style={{ background: color }} />
+                    <span className="heading-sm" style={{ fontSize: "0.85rem" }}>{dept}</span>
+                    <span className="label-caps" style={{ color: "hsl(var(--muted-foreground))", fontSize: "0.58rem" }}>
+                      ({deptRoles.length})
+                    </span>
+                  </div>
+                  <div className="space-y-2 pl-4">
+                    {deptRoles.map(role => (
+                      <div key={role.id} className="card-base flex items-center gap-3 p-3 hover:bg-muted/10">
+                        <Briefcase size={14} style={{ color, flexShrink: 0 }} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground"
+                            style={{ fontFamily: "'Barlow',sans-serif" }}>
+                            {role["Role Title"] || "Untitled Role"}
+                          </p>
+                          <p className="label-caps" style={{ fontSize: "0.58rem" }}>{dept}</p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="label-caps px-2 py-0.5 rounded"
+                            style={{
+                              background: role.Status === "Open" ? "hsl(142 71% 38%/0.1)" : "hsl(var(--muted))",
+                              color: role.Status === "Open" ? "hsl(142 71% 38%)" : "hsl(var(--muted-foreground))",
+                              fontSize: "0.58rem"
+                            }}>
+                            {role.Status || "Open"}
+                          </span>
+                          <a href="https://www.peoplebook.app/" target="_blank" rel="noopener noreferrer"
+                            className="text-muted-foreground hover:text-foreground" title="View on PeopleBook">
+                            <ExternalLink size={12} />
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* All applicants */}
+        {tab === "applicants" && (
+          <div>
+            <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-border bg-muted/10">
+              <div className="relative flex-1" style={{ minWidth: 160 }}>
+                <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder="Search name or email…" className="field-input pl-8"
+                  style={{ paddingTop: "0.3rem", paddingBottom: "0.3rem", fontSize: "0.82rem" }} />
+              </div>
+              <div className="flex items-center gap-1 flex-wrap">
+                {["All", ...Object.keys(stages)].map(s => (
+                  <button key={s} onClick={() => setSelectedStage(s)}
+                    className="label-caps px-2 py-0.5 rounded transition-all"
+                    style={{
+                      background: selectedStage === s ? "hsl(var(--crimson))" : "hsl(var(--muted))",
+                      color: selectedStage === s ? "white" : "hsl(var(--muted-foreground))",
+                      fontSize: "0.57rem",
+                    }}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+              <span className="label-caps ml-auto" style={{ fontSize: "0.58rem" }}>
+                {filteredApplicants.length}/{applicants.length}
+              </span>
+            </div>
+
+            <div>
+              {filteredApplicants.map(a => {
+                const stage = a.Stage || "New";
+                const meta = STAGE_META[stage] || STAGE_META.New;
+                const isExpanded = expandedApplicant === a.id;
+                const Icon = meta.icon;
+                // Q&A fields
+                const qaFields = Object.entries(a).filter(([k]) => k.startsWith("Q") && k.includes("—"));
+                return (
+                  <div key={a.id} className="border-b border-border last:border-0">
+                    <button
+                      onClick={() => setExpandedApplicant(isExpanded ? null : a.id)}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-muted/10 transition-colors">
+                      {/* Avatar initial */}
+                      <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
+                        style={{ background: meta.bg }}>
+                        <span style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:800, fontSize:"0.9rem", color:meta.color }}>
+                          {(a["Full Name"]||"?").charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      {/* Name + details */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-medium text-foreground">{a["Full Name"] || "—"}</p>
+                          <span className="label-caps px-1.5 py-0.5 rounded flex items-center gap-1"
+                            style={{ background: meta.bg, color: meta.color, fontSize: "0.55rem" }}>
+                            <Icon size={9} /> {stage}
+                          </span>
+                        </div>
+                        <p className="label-caps" style={{ fontSize: "0.58rem" }}>
+                          {a.Email || ""}
+                          {a.Phone ? ` · ${a.Phone}` : ""}
+                          {a["Date Applied"] ? ` · ${a["Date Applied"]}` : ""}
+                        </p>
+                      </div>
+                      {/* Right */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {a["Visa / Work Authorization"] && (
+                          <span className="label-caps hidden sm:inline" style={{ fontSize: "0.55rem", color: "hsl(142 71% 38%)" }}>
+                            ✓ Auth
+                          </span>
+                        )}
+                        {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                      </div>
+                    </button>
+
+                    {/* Expanded detail */}
+                    {isExpanded && (
+                      <div className="px-4 pb-4 bg-muted/5 border-t border-border">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4">
+                          {/* Basic info */}
+                          <div className="space-y-2">
+                            <p className="label-caps" style={{ fontSize:"0.6rem", color:"hsl(var(--crimson))" }}>Contact Info</p>
+                            {[
+                              ["Email",  a.Email],
+                              ["Phone",  a.Phone],
+                              ["Source", a.Source],
+                              ["Work Auth", a["Visa / Work Authorization"]],
+                              ["Applied", a["Date Applied"]],
+                            ].filter(([,v])=>v).map(([label, val]) => (
+                              <div key={label as string}>
+                                <span className="label-caps" style={{ fontSize:"0.55rem" }}>{label}: </span>
+                                <span className="text-xs" style={{ fontFamily:"'Barlow',sans-serif" }}>{val as string}</span>
+                              </div>
+                            ))}
+                          </div>
+                          {/* Q&A preview */}
+                          {qaFields.length > 0 && (
+                            <div className="space-y-2">
+                              <p className="label-caps" style={{ fontSize:"0.6rem", color:"hsl(var(--crimson))" }}>Screening Answers</p>
+                              {qaFields.slice(0, 3).map(([key, val]) => (
+                                <div key={key}>
+                                  <p className="label-caps" style={{ fontSize:"0.52rem", opacity:0.7 }}>
+                                    {key.split("—")[1]?.trim() || key}
+                                  </p>
+                                  <p className="text-xs" style={{ fontFamily:"'Barlow',sans-serif", lineHeight:1.5 }}>
+                                    {String(val).slice(0,120)}{String(val).length>120?"…":""}
+                                  </p>
+                                </div>
+                              ))}
+                              {qaFields.length > 3 && (
+                                <p className="label-caps" style={{ fontSize:"0.55rem", opacity:0.5 }}>
+                                  +{qaFields.length - 3} more answers
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {filteredApplicants.length === 0 && (
+                <div className="p-8 text-center text-sm text-muted-foreground">No applicants match.</div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

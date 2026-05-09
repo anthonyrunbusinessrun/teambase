@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, CheckSquare, Globe, LogOut,
-  FolderOpen, User, Radio, Settings, Database,
+  FolderOpen, User, Radio, Settings, BookOpen,
 } from "lucide-react";
 import { useEffect } from "react";
 import { authClient } from "@/lib/auth/client";
@@ -11,11 +11,6 @@ import { useRouter } from "next/navigation";
 import { NavDeadline } from "./NavDeadline";
 
 interface Task { id: string; title: string; dueDate: string; priority: string; }
-interface Props {
-  open: boolean;
-  onClose: () => void;
-  upcomingTasks?: Task[];
-}
 
 const NAV = [
   { href: "/dashboard",  label: "Dashboard",   icon: LayoutDashboard },
@@ -25,43 +20,32 @@ const NAV = [
 ] as const;
 
 const BOSS_NAV = [
-  { href: "/folios",        label: "Folios",      icon: FolderOpen },
-  { href: "/folios/tables", label: "All Tables",  icon: Database },
-  { href: "/edi",           label: "EDI Command", icon: Radio },
+  { href: "/folios",      label: "Folios",      icon: FolderOpen },
+  { href: "/peoplebook",  label: "PeopleBook",  icon: BookOpen },
+  { href: "/edi",         label: "EDI Command", icon: Radio },
 ] as const;
 
-export function Sidebar({ open, onClose, upcomingTasks = [] }: Props) {
+export function Sidebar({ open, onClose, upcomingTasks = [] }: {
+  open: boolean; onClose: () => void; upcomingTasks?: Task[];
+}) {
   const pathname = usePathname();
   const router = useRouter();
-
-  // Close when route changes
-  useEffect(() => { onClose(); }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
-
+  useEffect(() => { onClose(); }, [pathname]); // eslint-disable-line
   const active = (href: string) => pathname === href || pathname.startsWith(href + "/");
-
-  async function signOut() {
-    await authClient.signOut();
-    router.push("/login");
-  }
 
   return (
     <aside className={`sidebar ${open ? "open" : ""}`}>
-      {/* Logo */}
       <div className="px-5 pt-5 pb-3">
         <div className="sidebar-logo">TeamBase</div>
-        <p style={{
-          fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 600,
-          fontSize: "0.58rem", letterSpacing: "0.18em", textTransform: "uppercase",
-          color: "rgba(255,255,255,0.28)", marginTop: 2,
-        }}>Ray Land Inc</p>
+        <p style={{ fontFamily:"'Barlow Condensed',sans-serif", fontWeight:600, fontSize:"0.58rem",
+          letterSpacing:"0.18em", textTransform:"uppercase", color:"rgba(255,255,255,0.28)", marginTop:2 }}>
+          Ray Land Inc
+        </p>
       </div>
-      <div style={{ height: 2, background: "hsl(var(--crimson))", margin: "0 1.25rem", borderRadius: 1, opacity: 0.7 }} />
+      <div style={{ height:2, background:"hsl(var(--crimson))", margin:"0 1.25rem", borderRadius:1, opacity:0.7 }} />
 
-      {/* Deadline countdown */}
       {upcomingTasks.length > 0 && (
-        <div className="px-3 pt-3 pb-1">
-          <NavDeadline tasks={upcomingTasks} />
-        </div>
+        <div className="px-3 pt-3 pb-1"><NavDeadline tasks={upcomingTasks} /></div>
       )}
 
       <nav className="flex-1 py-2 overflow-y-auto">
@@ -72,7 +56,7 @@ export function Sidebar({ open, onClose, upcomingTasks = [] }: Props) {
           </Link>
         ))}
 
-        <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "0.5rem 1.25rem" }} />
+        <div style={{ height:1, background:"rgba(255,255,255,0.07)", margin:"0.5rem 1.25rem" }} />
         <p className="sidebar-section-label">BOSS</p>
         {BOSS_NAV.map(({ href, label, icon: Icon }) => (
           <Link key={href} href={href} className={`sidebar-nav-item ${active(href) ? "active" : ""}`}>
@@ -80,7 +64,7 @@ export function Sidebar({ open, onClose, upcomingTasks = [] }: Props) {
           </Link>
         ))}
 
-        <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "0.5rem 1.25rem" }} />
+        <div style={{ height:1, background:"rgba(255,255,255,0.07)", margin:"0.5rem 1.25rem" }} />
         <p className="sidebar-section-label">Account</p>
         <Link href="/profile" className={`sidebar-nav-item ${active("/profile") ? "active" : ""}`}>
           <User size={15} strokeWidth={active("/profile") ? 2 : 1.5} /> My Profile
@@ -90,8 +74,9 @@ export function Sidebar({ open, onClose, upcomingTasks = [] }: Props) {
         </Link>
       </nav>
 
-      <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", padding: "0.5rem 0" }}>
-        <button onClick={signOut} className="sidebar-nav-item w-full text-left">
+      <div style={{ borderTop:"1px solid rgba(255,255,255,0.08)", padding:"0.5rem 0" }}>
+        <button onClick={async () => { await authClient.signOut(); router.push("/login"); }}
+          className="sidebar-nav-item w-full text-left">
           <LogOut size={15} strokeWidth={1.5} /> Sign Out
         </button>
       </div>
