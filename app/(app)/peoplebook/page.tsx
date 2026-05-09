@@ -5,33 +5,30 @@ import { db } from "@/lib/db";
 import { appSettings } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { PeoplebookDashboard } from "@/components/peoplebook/PeoplebookDashboard";
-import { ExternalLink } from "lucide-react";
 
 export const metadata = { title: "PeopleBook" };
 export const dynamic = "force-dynamic";
 
 const PB_BASE = "appGGFKuFxQ3Z0Wuz";
 
+// DB key takes priority — it's the freshest user-updated key.
+// Env var is fallback in case DB is empty.
 async function getKey(): Promise<string> {
-  // 1. Try env var (stripped of whitespace)
-  const envKey = (process.env.AIRTABLE_API_KEY || "").replace(/\s+/g, "");
-  if (envKey) return envKey;
-  // 2. Fall back to DB-stored key (saved via /settings page)
   try {
     const [row] = await db.select().from(appSettings).where(eq(appSettings.key, "airtable_api_key"));
-    if (row?.value) return row.value;
+    if (row?.value?.trim()) return row.value.trim();
   } catch {}
-  return "";
+  return (process.env.AIRTABLE_API_KEY || "").replace(/\s+/g, "");
 }
 
-async function atFetch(key: string, table: string, max = 200) {
+async function atFetch(key: string, table: string) {
   if (!key) return [];
   const res = await fetch(
-    `https://api.airtable.com/v0/${PB_BASE}/${encodeURIComponent(table)}?maxRecords=${max}`,
+    `https://api.airtable.com/v0/${PB_BASE}/${encodeURIComponent(table)}?maxRecords=500`,
     { headers: { Authorization: `Bearer ${key}` }, cache: "no-store" }
   );
   if (!res.ok) {
-    console.error(`[PeopleBook] ${table} fetch failed: ${res.status}`);
+    console.error(`[PeopleBook] ${table} ${res.status}: ${await res.text().catch(()=>"")}`);
     return [];
   }
   const d = await res.json();
@@ -55,26 +52,15 @@ export default async function PeoplebookPage() {
     const s = (a as any).Stage || "New";
     stages[s] = (stages[s] || 0) + 1;
   }
-
   const openRoles = (roles as any[]).filter((r: any) => !r.Status || r.Status === "Open");
   const newApplicants = (applicants as any[]).filter((a: any) => !a.Stage || a.Stage === "New").length;
 
   return (
     <>
+      {/* No button in TopBar — button lives inside the page */}
       <TopBar
         title="PeopleBook"
         subtitle={`${applicants.length} applicants · ${openRoles.length} open roles`}
-        right={
-          <a
-            href="https://www.peoplebook.app/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-primary"
-            style={{ fontSize: "0.72rem", padding: "0.4rem 1rem" }}
-          >
-            <ExternalLink size={13} /> Open PeopleBook
-          </a>
-        }
       />
       <div className="page-content space-y-5">
         <PeoplebookDashboard
