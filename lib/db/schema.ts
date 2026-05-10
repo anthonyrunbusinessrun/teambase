@@ -339,3 +339,90 @@ export const appSettings = pgTable("app_settings", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   updatedBy: text("updated_by"),
 });
+
+// ── Channels (Slack-style messaging) ──────────────────────────────────────────
+export const channelTypeEnum = pgEnum("channel_type", ["public", "private", "direct"]);
+
+export const channels = pgTable("channels", {
+  id:          text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  name:        text("name").notNull(),
+  description: text("description"),
+  type:        channelTypeEnum("type").notNull().default("public"),
+  emoji:       text("emoji").default("💬"),
+  createdBy:   text("created_by").notNull(),
+  createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  archivedAt:  timestamp("archived_at", { withTimezone: true }),
+});
+
+export const channelMembers = pgTable("channel_members", {
+  id:        text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  channelId: text("channel_id").notNull().references(() => channels.id, { onDelete: "cascade" }),
+  userId:    text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  role:      text("role").notNull().default("member"), // admin | member
+  joinedAt:  timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
+  lastReadAt: timestamp("last_read_at", { withTimezone: true }),
+});
+
+export const channelMessages = pgTable("channel_messages", {
+  id:          text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  channelId:   text("channel_id").notNull().references(() => channels.id, { onDelete: "cascade" }),
+  userId:      text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  body:        text("body").notNull(),
+  parentId:    text("parent_id"), // thread parent
+  reactions:   text("reactions").default("{}"), // JSON {emoji: [userId,...]}
+  edited:      boolean("edited").default(false),
+  createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  editedAt:    timestamp("edited_at", { withTimezone: true }),
+  deletedAt:   timestamp("deleted_at", { withTimezone: true }),
+});
+
+// ── Calendar Events ────────────────────────────────────────────────────────────
+export const calendarEvents = pgTable("calendar_events", {
+  id:          text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  title:       text("title").notNull(),
+  description: text("description"),
+  startAt:     timestamp("start_at", { withTimezone: true }).notNull(),
+  endAt:       timestamp("end_at", { withTimezone: true }).notNull(),
+  allDay:      boolean("all_day").default(false),
+  color:       text("color").default("crimson"), // crimson|blue|green|amber|purple
+  taskId:      text("task_id").references(() => tasks.id, { onDelete: "set null" }),
+  createdBy:   text("created_by").notNull().references(() => users.id),
+  createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:   timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── Huddle Rooms (Video/Voice) ─────────────────────────────────────────────────
+export const huddleRooms = pgTable("huddle_rooms", {
+  id:             text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  channelId:      text("channel_id").references(() => channels.id, { onDelete: "set null" }),
+  name:           text("name").notNull(),
+  twilioRoomSid:  text("twilio_room_sid"),
+  twilioRoomName: text("twilio_room_name"),
+  status:         text("status").notNull().default("waiting"), // waiting|active|ended
+  createdBy:      text("created_by").notNull().references(() => users.id),
+  startedAt:      timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  endedAt:        timestamp("ended_at", { withTimezone: true }),
+});
+
+export const huddleParticipants = pgTable("huddle_participants", {
+  id:          text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  roomId:      text("room_id").notNull().references(() => huddleRooms.id, { onDelete: "cascade" }),
+  userId:      text("user_id").notNull().references(() => users.id),
+  joinedAt:    timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
+  leftAt:      timestamp("left_at", { withTimezone: true }),
+});
+
+// ── Twilio Notifications Log ───────────────────────────────────────────────────
+export const twilioLogs = pgTable("twilio_logs", {
+  id:        text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  type:      text("type").notNull(), // sms|call|email
+  to:        text("to").notNull(),
+  from:      text("from"),
+  subject:   text("subject"),
+  body:      text("body").notNull(),
+  status:    text("status").notNull().default("pending"), // pending|sent|failed
+  twilioSid: text("twilio_sid"),
+  error:     text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  userId:    text("user_id").references(() => users.id),
+});

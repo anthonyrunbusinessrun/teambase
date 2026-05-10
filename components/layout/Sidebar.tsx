@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Users, CheckSquare, Globe, LogOut,
   FolderOpen, User, Radio, Settings, BookOpen,
+  MessageSquare, Calendar, Video,
 } from "lucide-react";
 import { useEffect } from "react";
 import { authClient } from "@/lib/auth/client";
@@ -14,6 +15,9 @@ interface Task { id: string; title: string; dueDate: string; priority: string; }
 
 const NAV = [
   { href: "/dashboard",  label: "Dashboard",   icon: LayoutDashboard },
+  { href: "/channels",   label: "Channels",    icon: MessageSquare },
+  { href: "/calendar",   label: "Calendar",    icon: Calendar },
+  { href: "/huddle",     label: "Huddle",      icon: Video },
   { href: "/clocks",     label: "World Clocks", icon: Globe },
   { href: "/tasks",      label: "Tasks",        icon: CheckSquare },
   { href: "/presence",   label: "Team",         icon: Users },
@@ -49,7 +53,7 @@ export function Sidebar({ open, onClose, upcomingTasks = [] }: {
       )}
 
       <nav className="flex-1 py-2 overflow-y-auto">
-        <p className="sidebar-section-label">Operations</p>
+        <p className="sidebar-section-label">Workspace</p>
         {NAV.map(({ href, label, icon: Icon }) => (
           <Link key={href} href={href} className={`sidebar-nav-item ${active(href) ? "active" : ""}`}>
             <Icon size={15} strokeWidth={active(href) ? 2 : 1.5} />{label}
