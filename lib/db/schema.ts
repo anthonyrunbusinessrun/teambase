@@ -370,9 +370,33 @@ export const channelMessages = pgTable("channel_messages", {
   body:        text("body").notNull(),
   parentId:    text("parent_id"), // thread parent
   reactions:   text("reactions").default("{}"), // JSON {emoji: [userId,...]}
+  attachments: text("attachments").default("[]"), // JSON [{name, url, type, size}]
   edited:      boolean("edited").default(false),
   createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   editedAt:    timestamp("edited_at", { withTimezone: true }),
+  deletedAt:   timestamp("deleted_at", { withTimezone: true }),
+});
+
+// ── Channel Invites ──────────────────────────────────────────────────────────
+export const channelInvites = pgTable("channel_invites", {
+  id:         text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  channelId:  text("channel_id").notNull().references(() => channels.id, { onDelete: "cascade" }),
+  invitedBy:  text("invited_by").notNull().references(() => users.id),
+  invitedUser:text("invited_user").notNull().references(() => users.id),
+  status:     text("status").notNull().default("pending"), // pending|accepted|declined
+  createdAt:  timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── Direct Messages ───────────────────────────────────────────────────────────
+export const directMessages = pgTable("direct_messages", {
+  id:          text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  fromUserId:  text("from_user_id").notNull().references(() => users.id),
+  toUserId:    text("to_user_id").notNull().references(() => users.id),
+  body:        text("body").notNull(),
+  attachments: text("attachments").default("[]"),
+  reactions:   text("reactions").default("{}"),
+  read:        boolean("read").default(false),
+  createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   deletedAt:   timestamp("deleted_at", { withTimezone: true }),
 });
 

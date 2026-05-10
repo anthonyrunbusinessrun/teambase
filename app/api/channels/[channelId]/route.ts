@@ -24,11 +24,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ chan
       id: channelMessages.id,
       body: channelMessages.body,
       reactions: channelMessages.reactions,
+      attachments: channelMessages.attachments,
       edited: channelMessages.edited,
       createdAt: channelMessages.createdAt,
       userId: channelMessages.userId,
       userName: users.name,
       userAvatar: users.avatarUrl,
+      deletedAt: channelMessages.deletedAt,
     })
     .from(channelMessages)
     .leftJoin(users, eq(channelMessages.userId, users.id))
