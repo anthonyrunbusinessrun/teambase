@@ -11,10 +11,10 @@ export async function GET(req: NextRequest) {
   try {
     const [cols, allMsgs, channels] = await Promise.all([
       sql`SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'channel_messages' ORDER BY ordinal_position`,
-      sql`SELECT id, channel_id, body, created_at, deleted_at FROM channel_messages ORDER BY created_at DESC LIMIT 20`,
+      sql`SELECT id, channel_id, body, created_at, deleted_at, parent_id FROM channel_messages ORDER BY created_at DESC LIMIT 20`,
       sql`SELECT id, name, emoji FROM channels ORDER BY name`,
     ]);
-    return NextResponse.json({ cols, channels, allMsgs });
+    return NextResponse.json({ cols, channels, allMsgs, totalMsgs: allMsgs.length });
   } finally {
     await sql.end();
   }
