@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { tasks } from "@/lib/db/schema";
 import { and, ne, asc, isNotNull } from "drizzle-orm";
 import { ClientLayout } from "@/components/layout/ClientLayout";
+import { PresenceHeartbeat } from "@/components/presence/PresenceHeartbeat";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -22,5 +23,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     }));
   } catch {}
 
-  return <ClientLayout upcomingTasks={upcomingTasks}>{children}</ClientLayout>;
+  return (
+    <>
+      <PresenceHeartbeat />
+      <ClientLayout upcomingTasks={upcomingTasks}>{children}</ClientLayout>
+    </>
+  );
 }

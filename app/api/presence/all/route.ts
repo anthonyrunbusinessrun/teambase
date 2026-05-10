@@ -3,17 +3,31 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { presence, users, userProfiles } from "@/lib/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, lt, and } from "drizzle-orm";
 
 export async function GET() {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // Mark users with stale heartbeats (>90s) as offline
+  const staleThreshold = new Date(Date.now() - 90_000);
+  await db.update(presence)
+    .set({ status: "offline" })
+    .where(and(
+      eq(presence.status, "online"),
+      lt(presence.lastSeenAt, staleThreshold),
+    ))
+    .catch(() => {});
+
   const members = await db
     .select({
-      id: users.id, name: users.name, email: users.email,
-      avatarUrl: users.avatarUrl, role: users.role,
-      status: presence.status, lastSeenAt: presence.lastSeenAt,
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      avatarUrl: users.avatarUrl,
+      role: users.role,
+      status: presence.status,
+      lastSeenAt: presence.lastSeenAt,
       positionTitle: userProfiles.positionTitle,
     })
     .from(users)
