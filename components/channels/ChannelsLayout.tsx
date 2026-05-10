@@ -7,12 +7,12 @@ import {
   Plus, Send, Smile, X, Hash, Lock, UserPlus,
   Paperclip, FileText, File, Check, Bell,
   ChevronRight, MessageSquare, Search, AlertCircle,
-  Loader2,
+  Loader2, MoreHorizontal, Pencil, Trash2,
 } from "lucide-react";
 import {
   createChannel, toggleReaction,
   inviteToChannel, acceptInvite, declineInvite,
-  toggleDMReaction,
+  toggleDMReaction, deleteChannel, renameChannel,
 } from "@/lib/actions/channels";
 import { TopBar } from "@/components/layout/TopBar";
 
@@ -219,6 +219,9 @@ export function ChannelsLayout({ currentUser, allChannels, memberOf, activeView,
   const [inviteSent, setInviteSent] = useState<string | null>(null);
   const [dmSearch, setDmSearch] = useState("");
   const [newName, setNewName] = useState(""); const [newDesc, setNewDesc] = useState(""); const [newEmoji, setNewEmoji] = useState("💬"); const [newPrivate, setNewPrivate] = useState(false);
+  const [showChannelMenu, setShowChannelMenu] = useState<string | null>(null);
+  const [showRename, setShowRename] = useState<Channel | null>(null);
+  const [renameVal, setRenameVal] = useState(""); const [renameEmoji, setRenameEmoji] = useState(""); const [renameDesc, setRenameDesc] = useState("");
   const [localMemberOf, setLocalMemberOf] = useState(new Set(memberOf));
   const [localInvites, setLocalInvites] = useState(pendingInvites);
 
@@ -415,9 +418,28 @@ export function ChannelsLayout({ currentUser, allChannels, memberOf, activeView,
                       {ch.type === "private" && <Lock size={9} className="text-muted-foreground flex-shrink-0" />}
                     </button>
                     {isActive && (
-                      <button onClick={() => setShowInvite(ch.id)} title="Invite members" className="px-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <UserPlus size={12} className="text-muted-foreground hover:text-foreground" />
-                      </button>
+                      <div className="flex items-center">
+                        <button onClick={() => setShowInvite(ch.id)} title="Invite members" className="px-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <UserPlus size={11} className="text-muted-foreground hover:text-foreground" />
+                        </button>
+                        <div className="relative">
+                          <button onClick={e => { e.stopPropagation(); setShowChannelMenu(showChannelMenu === ch.id ? null : ch.id); }} className="px-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <MoreHorizontal size={11} className="text-muted-foreground hover:text-foreground" />
+                          </button>
+                          {showChannelMenu === ch.id && (
+                            <div className="absolute left-0 top-5 z-30 card-base border border-border shadow-lg rounded-lg overflow-hidden min-w-[140px]" onClick={e => e.stopPropagation()}>
+                              <button onClick={() => { setRenameVal(ch.name); setRenameEmoji(ch.emoji||"💬"); setRenameDesc(ch.description||""); setShowRename(ch); setShowChannelMenu(null); }}
+                                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted/30 transition-colors text-left">
+                                <Pencil size={12}/> Rename
+                              </button>
+                              <button onClick={async () => { if (confirm(`Delete #${ch.name}? This cannot be undone.`)) { await deleteChannel(ch.id); setShowChannelMenu(null); router.push("/channels"); } }}
+                                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted/30 transition-colors text-left" style={{ color:"hsl(var(--crimson))" }}>
+                                <Trash2 size={12}/> Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     )}
                   </div>
                 );
@@ -659,6 +681,41 @@ export function ChannelsLayout({ currentUser, allChannels, memberOf, activeView,
                     </button>
                   </div>
                 ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Rename Channel Modal ── */}
+      {showRename && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowRename(null)}>
+          <div className="card-base p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="heading-md">Edit Channel</h2>
+              <button onClick={() => setShowRename(null)}><X size={18}/></button>
+            </div>
+            <div className="flex gap-3">
+              <div>
+                <label className="field-label">Emoji</label>
+                <input type="text" value={renameEmoji} onChange={e => setRenameEmoji(e.target.value)} className="field-input w-14 text-center text-xl" maxLength={2}/>
+              </div>
+              <div className="flex-1">
+                <label className="field-label">Name</label>
+                <input autoFocus type="text" value={renameVal} onChange={e => setRenameVal(e.target.value.toLowerCase().replace(/\s+/g,"-"))} className="field-input"/>
+              </div>
+            </div>
+            <div>
+              <label className="field-label">Description</label>
+              <input type="text" value={renameDesc} onChange={e => setRenameDesc(e.target.value)} className="field-input" placeholder="What's this channel about?"/>
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setShowRename(null)} className="btn-outline">Cancel</button>
+              <button onClick={async () => {
+                if (!renameVal) return;
+                await renameChannel(showRename.id, renameVal, renameEmoji, renameDesc);
+                setShowRename(null);
+                router.refresh();
+              }} className="btn-primary">Save Changes</button>
             </div>
           </div>
         </div>

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { channels, channelMembers, channelMessages } from "@/lib/db/schema";
+import { sql } from "drizzle-orm";
 import { eq, and } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
@@ -154,4 +155,23 @@ export async function toggleDMReaction(dmId: string, emoji: string) {
     await db.update(directMessages).set({ reactions: JSON.stringify(r) })
       .where(eq(directMessages.id, dmId));
   } catch {}
+}
+
+export async function deleteChannel(channelId: string) {
+  const user = await getUser();
+  // Only creator or admin can delete
+  await db.delete(channels).where(and(eq(channels.id, channelId), eq(channels.createdBy, user.id)));
+  revalidatePath("/channels");
+}
+
+export async function renameChannel(channelId: string, newName: string, newEmoji: string, newDescription: string) {
+  const user = await getUser();
+  await db.update(channels)
+    .set({
+      name: newName.toLowerCase().replace(/\s+/g, "-"),
+      emoji: newEmoji || "💬",
+      description: newDescription || null,
+    })
+    .where(and(eq(channels.id, channelId), eq(channels.createdBy, user.id)));
+  revalidatePath("/channels");
 }
