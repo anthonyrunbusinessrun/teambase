@@ -1,116 +1,79 @@
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
-import { db } from "@/lib/db";
-import { channels, channelMembers, channelMessages, users } from "@/lib/db/schema";
-import { eq, and, isNull, desc } from "drizzle-orm";
-import { ChannelsLayout } from "@/components/channels/ChannelsLayout";
 import { redirect } from "next/navigation";
+import { getPg } from "@/lib/db/postgres";
+import { ChannelsLayout } from "@/components/channels/ChannelsLayout";
 
-export const metadata = { title: "Channels" };
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Channels" };
 
 export default async function ChannelsPage({
   searchParams,
-}: {
-  searchParams: Promise<{ c?: string; dm?: string }>;
-}) {
+}: { searchParams: Promise<{ c?: string; dm?: string }> }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/login");
 
   const sp = await searchParams;
   const activeDmUserId = sp.dm || null;
 
-  // Fetch channels + memberships + users in parallel
-  const [allChannels, allUsers, myMemberships] = await Promise.all([
-    db.select({
-      id: channels.id, name: channels.name,
-      description: channels.description, emoji: channels.emoji,
-      type: channels.type, createdBy: channels.createdBy,
-    }).from(channels).where(isNull(channels.archivedAt)).orderBy(channels.name)
-      .catch(() => [] as any[]),
+  const sql = getPg();
 
-    db.select({ id: users.id, name: users.name, avatarUrl: users.avatarUrl })
-      .from(users).limit(100).catch(() => [] as any[]),
-
-    db.select({ channelId: channelMembers.channelId })
-      .from(channelMembers).where(eq(channelMembers.userId, session.user.id))
-      .catch(() => [] as any[]),
+  // All data in parallel — using raw SQL so it ALWAYS works regardless of Drizzle schema
+  const [channelsRows, allUsersRows, membershipsRows] = await Promise.all([
+    sql`SELECT id, name, description, emoji, type, created_by as "createdBy" FROM channels WHERE archived_at IS NULL ORDER BY name`,
+    sql`SELECT id, full_name as name, avatar_url as "avatarUrl" FROM users LIMIT 100`,
+    sql`SELECT channel_id as "channelId" FROM channel_members WHERE user_id = ${session.user.id}`,
   ]);
 
-  const memberOf = myMemberships.map((m: any) => m.channelId);
+  const memberOf = membershipsRows.map((m: any) => m.channelId as string);
 
-  // Auto-select first channel if none in URL
-  const firstMemberChannel = memberOf[0] || null;
-  const activeChannelId = sp.c || (!activeDmUserId && firstMemberChannel ? firstMemberChannel : null);
+  // Auto-select first channel
+  const firstChannel = memberOf[0] || null;
+  const activeChannelId = sp.c || (!activeDmUserId && firstChannel ? firstChannel : null);
 
-  // Pending invites (optional — won't crash if table missing)
+  // Load messages server-side with raw SQL
+  let initialMessages: any[] = [];
+  if (activeChannelId) {
+    const rows = await sql`
+      SELECT m.id, m.body,
+        COALESCE(m.reactions, '{}') as reactions,
+        m.edited, m.created_at as "createdAt",
+        m.user_id as "userId",
+        m.deleted_at as "deletedAt",
+        u.full_name as "userName",
+        u.avatar_url as "userAvatar",
+        m.user_id as "fromUserId",
+        u.full_name as "fromName",
+        u.avatar_url as "fromAvatar"
+      FROM channel_messages m
+      LEFT JOIN users u ON u.id = m.user_id
+      WHERE m.channel_id = ${activeChannelId}
+        AND m.deleted_at IS NULL
+      ORDER BY m.created_at DESC
+      LIMIT 80
+    `;
+    initialMessages = [...rows].reverse().map((r: any) => ({ ...r, attachments: "[]" }));
+  }
+
+  // Pending invites
   let pendingInvites: any[] = [];
   try {
-    const { channelInvites } = await import("@/lib/db/schema");
-    const raw = await db.select({
-      id: channelInvites.id, channelId: channelInvites.channelId,
-      channelName: channels.name, channelEmoji: channels.emoji,
-      inviterName: users.name,
-    })
-    .from(channelInvites)
-    .leftJoin(channels, eq(channelInvites.channelId, channels.id))
-    .leftJoin(users, eq(channelInvites.invitedBy, users.id))
-    .where(and(eq(channelInvites.invitedUser, session.user.id), eq(channelInvites.status, "pending")));
-    pendingInvites = raw.map(i => ({
+    const inv = await sql`
+      SELECT ci.id, ci.channel_id as "channelId",
+        c.name as "channelName", c.emoji as "channelEmoji",
+        u.full_name as "inviterName"
+      FROM channel_invites ci
+      LEFT JOIN channels c ON c.id = ci.channel_id
+      LEFT JOIN users u ON u.id = ci.invited_by
+      WHERE ci.invited_user = ${session.user.id} AND ci.status = 'pending'
+    `;
+    pendingInvites = inv.map((i: any) => ({
       id: i.id, channelId: i.channelId,
       channelName: i.channelName || "unknown",
       channelEmoji: i.channelEmoji || "💬",
       inviterName: i.inviterName || "Someone",
     }));
   } catch {}
-
-  // Load initial messages server-side
-  let initialMessages: any[] = [];
-  if (activeChannelId) {
-    try {
-      const rows = await db.select({
-        id: channelMessages.id, body: channelMessages.body,
-        reactions: channelMessages.reactions,
-        edited: channelMessages.edited,
-        createdAt: channelMessages.createdAt,
-        userId: channelMessages.userId,
-        userName: users.name, userAvatar: users.avatarUrl,
-        deletedAt: channelMessages.deletedAt,
-        fromUserId: channelMessages.userId,
-        fromName: users.name, fromAvatar: users.avatarUrl,
-      })
-      .from(channelMessages)
-      .leftJoin(users, eq(channelMessages.userId, users.id))
-      .where(and(eq(channelMessages.channelId, activeChannelId), isNull(channelMessages.deletedAt)))
-      .orderBy(desc(channelMessages.createdAt)).limit(80);
-      initialMessages = rows.reverse().map(r => ({ ...r, attachments: "[]" }));
-    } catch {}
-  }
-
-  if (activeDmUserId) {
-    try {
-      const { directMessages } = await import("@/lib/db/schema");
-      const { or } = await import("drizzle-orm");
-      const rows = await db.select({
-        id: directMessages.id, body: directMessages.body,
-        reactions: directMessages.reactions,
-        read: directMessages.read, createdAt: directMessages.createdAt,
-        fromUserId: directMessages.fromUserId, toUserId: directMessages.toUserId,
-        fromName: users.name, fromAvatar: users.avatarUrl,
-        userId: directMessages.fromUserId, userName: users.name,
-        userAvatar: users.avatarUrl, edited: directMessages.read,
-        deletedAt: directMessages.deletedAt,
-      })
-      .from(directMessages)
-      .leftJoin(users, eq(directMessages.fromUserId, users.id))
-      .where(or(
-        and(eq(directMessages.fromUserId, session.user.id), eq(directMessages.toUserId, activeDmUserId)),
-        and(eq(directMessages.fromUserId, activeDmUserId), eq(directMessages.toUserId, session.user.id)),
-      )!)
-      .orderBy(desc(directMessages.createdAt)).limit(80);
-      initialMessages = rows.reverse().map(r => ({ ...r, attachments: "[]" }));
-    } catch {}
-  }
 
   const activeView = activeChannelId
     ? { type: "channel" as const, id: activeChannelId }
@@ -120,12 +83,16 @@ export default async function ChannelsPage({
 
   return (
     <ChannelsLayout
-      currentUser={{ id: session.user.id, name: session.user.name || "", avatar: session.user.image }}
-      allChannels={allChannels}
+      currentUser={{
+        id: session.user.id,
+        name: session.user.name || session.user.email?.split("@")[0] || "You",
+        avatar: session.user.image,
+      }}
+      allChannels={channelsRows as any}
       memberOf={memberOf}
       activeView={activeView}
       initialMessages={initialMessages}
-      allUsers={allUsers}
+      allUsers={allUsersRows as any}
       pendingInvites={pendingInvites}
     />
   );
