@@ -18,10 +18,9 @@ export default async function ChannelsPage({
   if (!session) redirect("/login");
 
   const sp = await searchParams;
-  const activeChannelId = sp.c || null;
-  const activeDmUserId  = sp.dm || null;
+  const activeDmUserId = sp.dm || null;
 
-  // Run all queries with individual try/catch so one missing table doesn't kill the page
+  // Fetch channels + memberships + users in parallel
   const [allChannels, allUsers, myMemberships] = await Promise.all([
     db.select({
       id: channels.id, name: channels.name,
@@ -38,80 +37,79 @@ export default async function ChannelsPage({
       .catch(() => [] as any[]),
   ]);
 
-  // New tables — try/catch individually
+  const memberOf = myMemberships.map((m: any) => m.channelId);
+
+  // Auto-select first channel if none in URL
+  const firstMemberChannel = memberOf[0] || null;
+  const activeChannelId = sp.c || (!activeDmUserId && firstMemberChannel ? firstMemberChannel : null);
+
+  // Pending invites (optional — won't crash if table missing)
   let pendingInvites: any[] = [];
   try {
     const { channelInvites } = await import("@/lib/db/schema");
-    pendingInvites = await db
-      .select({
-        id: channelInvites.id, channelId: channelInvites.channelId,
-        channelName: channels.name, channelEmoji: channels.emoji,
-        inviterName: users.name,
-      })
-      .from(channelInvites)
-      .leftJoin(channels, eq(channelInvites.channelId, channels.id))
-      .leftJoin(users, eq(channelInvites.invitedBy, users.id))
-      .where(and(
-        eq(channelInvites.invitedUser, session.user.id),
-        eq(channelInvites.status, "pending"),
-      ))
-      .catch(() => []);
-  } catch { pendingInvites = []; }
+    const raw = await db.select({
+      id: channelInvites.id, channelId: channelInvites.channelId,
+      channelName: channels.name, channelEmoji: channels.emoji,
+      inviterName: users.name,
+    })
+    .from(channelInvites)
+    .leftJoin(channels, eq(channelInvites.channelId, channels.id))
+    .leftJoin(users, eq(channelInvites.invitedBy, users.id))
+    .where(and(eq(channelInvites.invitedUser, session.user.id), eq(channelInvites.status, "pending")));
+    pendingInvites = raw.map(i => ({
+      id: i.id, channelId: i.channelId,
+      channelName: i.channelName || "unknown",
+      channelEmoji: i.channelEmoji || "💬",
+      inviterName: i.inviterName || "Someone",
+    }));
+  } catch {}
 
-  // Initial messages
+  // Load initial messages server-side
   let initialMessages: any[] = [];
   if (activeChannelId) {
     try {
-      const rows = await db
-        .select({
-          id: channelMessages.id, body: channelMessages.body,
-          reactions: channelMessages.reactions,
-          attachments: channelMessages.attachments,
-          edited: channelMessages.edited,
-          createdAt: channelMessages.createdAt,
-          userId: channelMessages.userId,
-          userName: users.name, userAvatar: users.avatarUrl,
-          deletedAt: channelMessages.deletedAt,
-          fromUserId: channelMessages.userId,
-          fromName: users.name, fromAvatar: users.avatarUrl,
-        })
-        .from(channelMessages)
-        .leftJoin(users, eq(channelMessages.userId, users.id))
-        .where(and(
-          eq(channelMessages.channelId, activeChannelId),
-          isNull(channelMessages.deletedAt),
-        ))
-        .orderBy(desc(channelMessages.createdAt))
-        .limit(60);
-      initialMessages = rows.reverse();
-    } catch { initialMessages = []; }
+      const rows = await db.select({
+        id: channelMessages.id, body: channelMessages.body,
+        reactions: channelMessages.reactions,
+        edited: channelMessages.edited,
+        createdAt: channelMessages.createdAt,
+        userId: channelMessages.userId,
+        userName: users.name, userAvatar: users.avatarUrl,
+        deletedAt: channelMessages.deletedAt,
+        fromUserId: channelMessages.userId,
+        fromName: users.name, fromAvatar: users.avatarUrl,
+      })
+      .from(channelMessages)
+      .leftJoin(users, eq(channelMessages.userId, users.id))
+      .where(and(eq(channelMessages.channelId, activeChannelId), isNull(channelMessages.deletedAt)))
+      .orderBy(desc(channelMessages.createdAt)).limit(80);
+      initialMessages = rows.reverse().map(r => ({ ...r, attachments: "[]" }));
+    } catch {}
   }
 
   if (activeDmUserId) {
     try {
       const { directMessages } = await import("@/lib/db/schema");
       const { or } = await import("drizzle-orm");
-      const rows = await db
-        .select({
-          id: directMessages.id, body: directMessages.body,
-          reactions: directMessages.reactions, attachments: directMessages.attachments,
-          read: directMessages.read, createdAt: directMessages.createdAt,
-          fromUserId: directMessages.fromUserId, toUserId: directMessages.toUserId,
-          fromName: users.name, fromAvatar: users.avatarUrl,
-          userId: directMessages.fromUserId, userName: users.name,
-          userAvatar: users.avatarUrl, edited: directMessages.read,
-          deletedAt: directMessages.deletedAt,
-        })
-        .from(directMessages)
-        .leftJoin(users, eq(directMessages.fromUserId, users.id))
-        .where(or(
-          and(eq(directMessages.fromUserId, session.user.id), eq(directMessages.toUserId, activeDmUserId)),
-          and(eq(directMessages.fromUserId, activeDmUserId), eq(directMessages.toUserId, session.user.id)),
-        )!)
-        .orderBy(desc(directMessages.createdAt))
-        .limit(60);
-      initialMessages = rows.reverse();
-    } catch { initialMessages = []; }
+      const rows = await db.select({
+        id: directMessages.id, body: directMessages.body,
+        reactions: directMessages.reactions,
+        read: directMessages.read, createdAt: directMessages.createdAt,
+        fromUserId: directMessages.fromUserId, toUserId: directMessages.toUserId,
+        fromName: users.name, fromAvatar: users.avatarUrl,
+        userId: directMessages.fromUserId, userName: users.name,
+        userAvatar: users.avatarUrl, edited: directMessages.read,
+        deletedAt: directMessages.deletedAt,
+      })
+      .from(directMessages)
+      .leftJoin(users, eq(directMessages.fromUserId, users.id))
+      .where(or(
+        and(eq(directMessages.fromUserId, session.user.id), eq(directMessages.toUserId, activeDmUserId)),
+        and(eq(directMessages.fromUserId, activeDmUserId), eq(directMessages.toUserId, session.user.id)),
+      )!)
+      .orderBy(desc(directMessages.createdAt)).limit(80);
+      initialMessages = rows.reverse().map(r => ({ ...r, attachments: "[]" }));
+    } catch {}
   }
 
   const activeView = activeChannelId
@@ -124,16 +122,11 @@ export default async function ChannelsPage({
     <ChannelsLayout
       currentUser={{ id: session.user.id, name: session.user.name || "", avatar: session.user.image }}
       allChannels={allChannels}
-      memberOf={myMemberships.map(m => m.channelId)}
+      memberOf={memberOf}
       activeView={activeView}
       initialMessages={initialMessages}
       allUsers={allUsers}
-      pendingInvites={pendingInvites.map(i => ({
-        id: i.id, channelId: i.channelId,
-        channelName: i.channelName || "unknown",
-        channelEmoji: i.channelEmoji || "💬",
-        inviterName: i.inviterName || "Someone",
-      }))}
+      pendingInvites={pendingInvites}
     />
   );
 }

@@ -238,11 +238,13 @@ export function ChannelsLayout({ currentUser, allChannels, memberOf, activeView,
   const dmUser = activeView?.type === "dm" ? allUsers.find(u => u.id === (activeView as any).userId) : null;
   const isMember = activeView?.type === "channel" ? localMemberOf.has((activeView as any).id) : true;
 
-  // ── Sync initialMessages when URL changes (server pushed new data) ──
+  // ── Sync initialMessages when URL/channel changes ──
   useEffect(() => {
-    setMessages(initialMessages);
+    if (initialMessages.length > 0) {
+      setMessages(initialMessages);
+    }
     setLoading(false);
-  }, [activeViewKey]); // eslint-disable-line
+  }, [activeViewKey, initialMessages.length]); // eslint-disable-line
 
   // ── Scroll to bottom ──
   useEffect(() => {
@@ -284,7 +286,7 @@ export function ChannelsLayout({ currentUser, allChannels, memberOf, activeView,
   // ── Navigate — URL-based so server reloads correct messages ──
   const navigateTo = useCallback((v: View) => {
     if (!v) return;
-    setMessages([]); setLoading(true); setSendError(null);
+    setSendError(null);
     const url = v.type === "channel"
       ? `/channels?c=${(v as any).id}`
       : `/channels?dm=${(v as any).userId}`;
