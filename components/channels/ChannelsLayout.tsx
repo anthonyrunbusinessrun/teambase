@@ -10,9 +10,9 @@ import {
   Loader2,
 } from "lucide-react";
 import {
-  createChannel, sendMessage, toggleReaction,
+  createChannel, toggleReaction,
   inviteToChannel, acceptInvite, declineInvite,
-  sendDM, toggleDMReaction,
+  toggleDMReaction,
 } from "@/lib/actions/channels";
 import { TopBar } from "@/components/layout/TopBar";
 
@@ -307,12 +307,22 @@ export function ChannelsLayout({ currentUser, allChannels, memberOf, activeView,
     setMessages(prev => [...prev, opt]);
 
     try {
-      if (activeView.type === "channel") {
-        await sendMessage((activeView as any).id, body, atts);
-      } else {
-        await sendDM((activeView as any).userId, body, atts);
+      const payload = activeView.type === "channel"
+        ? { channelId: (activeView as any).id, body, attachments: atts }
+        : { toUserId: (activeView as any).userId, body, attachments: atts };
+
+      const res = await fetch("/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Server error" }));
+        throw new Error(err.error || "Failed to send");
       }
-      // Remove optimistic, poll will fetch real one
+
+      // Remove optimistic — poll will fetch real one in 3s
       setTimeout(() => {
         setMessages(prev => prev.filter(m => m.id !== optId));
       }, 3500);
