@@ -9,21 +9,12 @@ export async function GET(req: NextRequest) {
 
   const sql = postgres(process.env.DATABASE_URL!, { ssl: "require", max: 1 });
   try {
-    // Get actual columns in channel_messages
-    const cols = await sql`
-      SELECT column_name, data_type, is_nullable 
-      FROM information_schema.columns 
-      WHERE table_name = 'channel_messages' 
-      ORDER BY ordinal_position
-    `;
-    
-    // Get row count
-    const count = await sql`SELECT COUNT(*) as n FROM channel_messages`;
-    
-    // Get first few rows (no WHERE)
-    const rows = await sql`SELECT * FROM channel_messages LIMIT 5`;
-    
-    return NextResponse.json({ cols, count, rows });
+    const [cols, allMsgs, channels] = await Promise.all([
+      sql`SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'channel_messages' ORDER BY ordinal_position`,
+      sql`SELECT id, channel_id, body, created_at, deleted_at FROM channel_messages ORDER BY created_at DESC LIMIT 20`,
+      sql`SELECT id, name, emoji FROM channels ORDER BY name`,
+    ]);
+    return NextResponse.json({ cols, channels, allMsgs });
   } finally {
     await sql.end();
   }
