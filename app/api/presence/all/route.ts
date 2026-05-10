@@ -1,18 +1,13 @@
+import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { presence, users, userProfiles } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { TopBar } from "@/components/layout/TopBar";
-import { PresenceList } from "@/components/presence/PresenceList";
-import { PresenceHeartbeat } from "@/components/presence/PresenceHeartbeat";
 
-export const metadata = { title: "Team" };
-export const dynamic = "force-dynamic";
-
-export default async function PresencePage() {
+export async function GET() {
   const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) return null;
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const members = await db
     .select({
@@ -26,13 +21,7 @@ export default async function PresencePage() {
     .leftJoin(userProfiles, eq(userProfiles.userId, users.id))
     .orderBy(desc(presence.lastSeenAt));
 
-  return (
-    <>
-      <TopBar title="Team" subtitle={`${members.filter(m => m.status === "online").length} online · ${members.length} total`} />
-      <div className="page-content">
-        <PresenceHeartbeat />
-        <PresenceList members={members as any} currentUserId={session.user.id} />
-      </div>
-    </>
-  );
+  return NextResponse.json(members, {
+    headers: { "Cache-Control": "no-store, max-age=0" },
+  });
 }

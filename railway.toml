@@ -1,0 +1,7 @@
+[build]
+buildCommand = "npm run db:push && npm run build"
+
+[deploy]
+startCommand = "npm run start"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
