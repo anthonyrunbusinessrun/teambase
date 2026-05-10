@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { directMessages, users } from "@/lib/db/schema";
-import { eq, or, and, desc, gte } from "drizzle-orm";
+import { eq, or, and, desc, gte, asc } from "drizzle-orm";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ userId: string }> }) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -14,13 +14,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ user
   const since = searchParams.get("since");
   const myId = session.user.id;
 
-  const conditions = [
-    or(
-      and(eq(directMessages.fromUserId, myId), eq(directMessages.toUserId, userId)),
-      and(eq(directMessages.fromUserId, userId), eq(directMessages.toUserId, myId)),
-    )!,
-  ];
-  if (since) conditions.push(gte(directMessages.createdAt, new Date(since)));
+  const baseCondition = or(
+    and(eq(directMessages.fromUserId, myId), eq(directMessages.toUserId, userId)),
+    and(eq(directMessages.fromUserId, userId), eq(directMessages.toUserId, myId)),
+  )!;
 
   const msgs = await db
     .select({
@@ -37,9 +34,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ user
     })
     .from(directMessages)
     .leftJoin(users, eq(directMessages.fromUserId, users.id))
-    .where(and(...conditions))
-    .orderBy(desc(directMessages.createdAt))
-    .limit(80);
+    .where(since
+      ? and(baseCondition, gte(directMessages.createdAt, new Date(since)))
+      : baseCondition
+    )
+    .orderBy(since ? asc(directMessages.createdAt) : desc(directMessages.createdAt))
+    .limit(since ? 50 : 80);
 
-  return NextResponse.json(msgs.reverse());
+  return NextResponse.json(since ? msgs : msgs.reverse(), {
+    headers: { "Cache-Control": "no-store" },
+  });
 }

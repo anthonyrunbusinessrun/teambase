@@ -375,7 +375,9 @@ export const channelMessages = pgTable("channel_messages", {
   createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   editedAt:    timestamp("edited_at", { withTimezone: true }),
   deletedAt:   timestamp("deleted_at", { withTimezone: true }),
-});
+}, t => ({
+  channelCreatedIdx: index("ch_msg_channel_created_idx").on(t.channelId, t.createdAt),
+}));
 
 // ── Channel Invites ──────────────────────────────────────────────────────────
 export const channelInvites = pgTable("channel_invites", {
@@ -398,7 +400,9 @@ export const directMessages = pgTable("direct_messages", {
   read:        boolean("read").default(false),
   createdAt:   timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   deletedAt:   timestamp("deleted_at", { withTimezone: true }),
-});
+}, t => ({
+  dmUsersIdx: index("dm_users_created_idx").on(t.fromUserId, t.toUserId, t.createdAt),
+}));
 
 // ── Calendar Events ────────────────────────────────────────────────────────────
 export const calendarEvents = pgTable("calendar_events", {

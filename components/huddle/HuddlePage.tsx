@@ -136,7 +136,7 @@ export function HuddlePage({ rooms, currentUser, allUsers }: {
   // Active call UI
   if (inCall) {
     return (
-      <div style={{ display:"flex", flexDirection:"column", height:"100vh", background:"hsl(var(--charcoal))" }}>
+      <div style={{ position:"fixed", inset:0, zIndex:150, display:"flex", flexDirection:"column", background:"hsl(var(--charcoal))" }}>
         {/* Call header */}
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 20px", borderBottom:"1px solid rgba(255,255,255,0.1)" }}>
           <div>
@@ -188,16 +188,21 @@ export function HuddlePage({ rooms, currentUser, allUsers }: {
           )}
         </div>
 
-        {/* Controls */}
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:16, padding:20, borderTop:"1px solid rgba(255,255,255,0.1)" }}>
-          <button onClick={toggleMic} style={{ width:52, height:52, borderRadius:"50%", background:micOn?"rgba(255,255,255,0.15)":"hsl(var(--crimson))", border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", color:"white" }}>
+        {/* Controls — fixed at bottom so always visible */}
+        <div style={{ 
+          display:"flex", alignItems:"center", justifyContent:"center", gap:16, 
+          padding:"16px 20px", borderTop:"1px solid rgba(255,255,255,0.15)",
+          background:"hsl(0 0% 6%)", flexShrink:0,
+        }}>
+          <button onClick={toggleMic} title={micOn ? "Mute mic" : "Unmute mic"} style={{ width:52, height:52, borderRadius:"50%", background:micOn?"rgba(255,255,255,0.15)":"hsl(var(--crimson))", border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", color:"white", transition:"background 0.15s" }}>
             {micOn ? <Mic size={22}/> : <MicOff size={22}/>}
           </button>
-          <button onClick={toggleCam} style={{ width:52, height:52, borderRadius:"50%", background:camOn?"rgba(255,255,255,0.15)":"hsl(var(--crimson))", border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", color:"white" }}>
+          <button onClick={toggleCam} title={camOn ? "Turn off camera" : "Turn on camera"} style={{ width:52, height:52, borderRadius:"50%", background:camOn?"rgba(255,255,255,0.15)":"hsl(var(--crimson))", border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", color:"white", transition:"background 0.15s" }}>
             {camOn ? <Video size={22}/> : <VideoOff size={22}/>}
           </button>
-          <button onClick={leaveRoom} style={{ width:64, height:64, borderRadius:"50%", background:"hsl(0 72% 50%)", border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", color:"white" }}>
-            <PhoneOff size={26}/>
+          <button onClick={leaveRoom} title="End call" style={{ width:64, height:64, borderRadius:"50%", background:"hsl(0 72% 50%)", border:"none", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", color:"white", gap:2 }}>
+            <PhoneOff size={22}/>
+            <span style={{ fontSize:"0.5rem", fontFamily:"'Barlow Condensed',sans-serif", fontWeight:700, letterSpacing:"0.06em" }}>END</span>
           </button>
         </div>
       </div>

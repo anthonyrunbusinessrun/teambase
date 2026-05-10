@@ -233,47 +233,74 @@ export function ChannelsLayout({ currentUser, allChannels, memberOf, activeView,
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior:"smooth" }); }, [messages.length]);
+  // Scroll to bottom on new messages
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
 
-  // Poll messages every 2s
+  // Track the current view key so polling closure always has latest value
+  const viewKeyRef = useRef<string>("");
+  const latestMsgsRef = useRef<(Message|DM)[]>(messages);
+  latestMsgsRef.current = messages;
+
+  // When view changes: immediately clear messages and fetch fresh
+  const viewKey = view ? (view.type === "channel" ? `ch:${(view as any).id}` : `dm:${(view as any).userId}`) : "";
   useEffect(() => {
     if (!view) return;
+    viewKeyRef.current = viewKey;
+    setMessages([]); // clear immediately — prevents old channel data showing
+    
+    const url = view.type === "channel"
+      ? `/api/channels/${(view as any).id}`
+      : `/api/dm/${(view as any).userId}`;
+    
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        // Only set if view hasn't changed while we were fetching
+        if (viewKeyRef.current === viewKey) setMessages(data);
+      })
+      .catch(() => {});
+  }, [viewKey]); // eslint-disable-line
+
+  // Poll for new messages — stable interval, uses refs to avoid stale closure
+  useEffect(() => {
+    if (!view) return;
+    const currentViewKey = viewKey;
+    
     const poll = async () => {
-      const last = messages[messages.length-1];
+      // Stop if view has changed
+      if (viewKeyRef.current !== currentViewKey) return;
+      
+      const msgs = latestMsgsRef.current;
+      // Only get messages newer than the last real (non-optimistic) one
+      const realMsgs = msgs.filter(m => !m.id.startsWith("opt-"));
+      const last = realMsgs[realMsgs.length - 1];
       const since = last?.createdAt ? new Date(last.createdAt).toISOString() : "";
+      
       try {
         const url = view.type === "channel"
-          ? `/api/channels/${view.id}?since=${encodeURIComponent(since)}`
-          : `/api/dm/${view.userId}?since=${encodeURIComponent(since)}`;
+          ? `/api/channels/${(view as any).id}?since=${encodeURIComponent(since)}`
+          : `/api/dm/${(view as any).userId}?since=${encodeURIComponent(since)}`;
         const res = await fetch(url);
+        if (!res.ok) return;
         const data = await res.json();
-        if (data.length > 0) {
+        if (data.length > 0 && viewKeyRef.current === currentViewKey) {
           setMessages(prev => {
-            const ids = new Set(prev.map(m => m.id));
-            return [...prev, ...data.filter((m: any) => !ids.has(m.id))];
+            const ids = new Set(prev.filter(m => !m.id.startsWith("opt-")).map(m => m.id));
+            const newMsgs = data.filter((m: any) => !ids.has(m.id));
+            if (!newMsgs.length) return prev;
+            // Remove matching optimistic messages, add real ones
+            return [
+              ...prev.filter(m => !m.id.startsWith("opt-")),
+              ...newMsgs,
+            ];
           });
         }
       } catch {}
     };
-    const id = setInterval(poll, 2000);
+    
+    const id = setInterval(poll, 3000); // 3s instead of 2s — reduces server load
     return () => clearInterval(id);
-  }, [view, messages.length]);
-
-  // Reset messages when view changes
-  useEffect(() => {
-    if (!view) return;
-    const fetchInit = async () => {
-      const url = view.type === "channel"
-        ? `/api/channels/${view.id}`
-        : `/api/dm/${view.userId}`;
-      try {
-        const res = await fetch(url);
-        const data = await res.json();
-        setMessages(data);
-      } catch {}
-    };
-    fetchInit();
-  }, [view?.type === "channel" ? (view as any).id : (view as any)?.userId]);
+  }, [viewKey]); // eslint-disable-line — stable key, no message.length dep
 
   const handleSend = async () => {
     if ((!input.trim() && !attachments.length) || !view || sending) return;

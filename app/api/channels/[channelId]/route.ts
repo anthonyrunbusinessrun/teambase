@@ -3,11 +3,12 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { channelMessages, users } from "@/lib/db/schema";
-import { eq, desc, isNull, and, gte } from "drizzle-orm";
+import { eq, desc, isNull, and, gte, asc } from "drizzle-orm";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ channelId: string }> }) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const { channelId } = await params;
   const { searchParams } = new URL(req.url);
   const since = searchParams.get("since");
@@ -35,8 +36,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ chan
     .from(channelMessages)
     .leftJoin(users, eq(channelMessages.userId, users.id))
     .where(and(...conditions))
-    .orderBy(desc(channelMessages.createdAt))
-    .limit(100);
+    .orderBy(since ? asc(channelMessages.createdAt) : desc(channelMessages.createdAt))
+    .limit(since ? 50 : 80);
 
-  return NextResponse.json(messages.reverse());
+  const result = since ? messages : messages.reverse();
+
+  return NextResponse.json(result, {
+    headers: { "Cache-Control": "no-store" },
+  });
 }
