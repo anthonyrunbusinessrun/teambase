@@ -1,26 +1,25 @@
 "use client";
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { AlarmClock } from "lucide-react";
+import { Timer } from "lucide-react";
 
 interface Task { id: string; title: string; dueDate: string; priority: string; }
 
 function pad(n: number) { return String(n).padStart(2, "0"); }
 
 function formatCountdown(ms: number) {
-  if (ms <= 0) return { display: "OVERDUE", urgent: true, overdue: true };
-  const totalSec = Math.floor(ms / 1000);
-  const d  = Math.floor(totalSec / 86400);
-  const h  = Math.floor((totalSec % 86400) / 3600);
-  const m  = Math.floor((totalSec % 3600) / 60);
-  const s  = totalSec % 60;
-  if (d > 0) return { display: `${d}d ${pad(h)}h ${pad(m)}m`, urgent: d < 2, overdue: false };
-  return { display: `${pad(h)}:${pad(m)}:${pad(s)}`, urgent: true, overdue: false };
+  if (ms <= 0) return { display: "OVERDUE", overdue: true };
+  const s = Math.floor(ms / 1000);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (d > 0) return { display: `${d}d ${pad(h)}h ${pad(m)}m`, overdue: false };
+  return { display: `${pad(h)}:${pad(m)}:${pad(sec)}`, overdue: false };
 }
 
 export function NavDeadline({ tasks }: { tasks: Task[] }) {
   const [now, setNow] = useState(Date.now());
-
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
@@ -33,25 +32,49 @@ export function NavDeadline({ tasks }: { tasks: Task[] }) {
 
   if (!next) return null;
 
-  const { display, urgent, overdue } = formatCountdown(next.due - now);
-  const color = overdue ? "hsl(0 72% 51%)" : urgent ? "hsl(38 90% 48%)" : "hsl(var(--muted-foreground))";
-  const bg    = overdue ? "hsl(0 72% 51% / 0.1)" : urgent ? "hsl(38 90% 50% / 0.08)" : "hsl(var(--muted)/0.5)";
+  const { display, overdue } = formatCountdown(next.due - now);
 
   return (
-    <Link href={`/tasks/${next.id}`}
-      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded transition-colors"
-      style={{ background: bg }} title={`Deadline: ${next.title}`}>
-      <AlarmClock size={12} style={{ color, flexShrink: 0 }} />
-      <div style={{ lineHeight: 1 }}>
+    <Link
+      href={`/tasks/${next.id}`}
+      className="flex items-center gap-2.5 rounded-lg transition-all hover:opacity-80 active:scale-95"
+      style={{
+        padding: "7px 12px",
+        background: overdue ? "hsl(var(--crimson)/0.18)" : "hsl(var(--crimson)/0.1)",
+        border: `1px solid ${overdue ? "hsl(var(--crimson)/0.5)" : "hsl(var(--crimson)/0.25)"}`,
+      }}
+      title={`Deadline: ${next.title}`}
+    >
+      <Timer
+        size={16}
+        style={{ color: "hsl(var(--crimson))", flexShrink: 0, strokeWidth: 2.5 }}
+      />
+      <div style={{ lineHeight: 1.1 }}>
+        {/* Countdown — large and bold */}
         <div style={{
           fontFamily: "'Barlow Condensed', sans-serif",
-          fontWeight: 800, fontSize: "0.85rem", color,
-          letterSpacing: overdue ? "0.04em" : "0.02em",
+          fontWeight: 800,
+          fontSize: "1.05rem",
+          color: "hsl(var(--crimson))",
+          letterSpacing: "0.05em",
         }}>
           {display}
         </div>
-        <div className="label-caps truncate" style={{ maxWidth: 72, fontSize: "0.5rem", opacity: 0.7 }}>
-          {next.title.slice(0, 16)}{next.title.length > 16 ? "…" : ""}
+        {/* Task title — smaller but still crimson */}
+        <div style={{
+          fontFamily: "'Barlow Condensed', sans-serif",
+          fontWeight: 600,
+          fontSize: "0.6rem",
+          letterSpacing: "0.1em",
+          textTransform: "uppercase",
+          color: "hsl(var(--crimson)/0.65)",
+          marginTop: 2,
+          maxWidth: 90,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}>
+          {next.title}
         </div>
       </div>
     </Link>

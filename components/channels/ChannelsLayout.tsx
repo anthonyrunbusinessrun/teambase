@@ -5,7 +5,7 @@ import {
   Plus, Send, Smile, X, Hash, Lock, UserPlus,
   Paperclip, FileText, Check, Bell, ChevronRight,
   MessageSquare, Search, Loader2, MoreHorizontal,
-  Pencil, Trash2,
+  Pencil, Trash2, LayoutList,
 } from "lucide-react";
 import {
   createChannel, toggleReaction, inviteToChannel,
@@ -148,6 +148,7 @@ export function ChannelsLayout({ currentUser, allChannels, memberOf, activeView,
   const [invSearch, setInvSearch]   = useState(""); const [invSent, setInvSent]   = useState<string|null>(null);
   const [dmSearch, setDmSearch]     = useState("");
   const [showEmoji, setShowEmoji]   = useState(false);
+  const [showMobileNav, setShowMobileNav] = useState(false);
 
   const endRef  = useRef<HTMLDivElement>(null);
   const taRef   = useRef<HTMLTextAreaElement>(null);
@@ -398,6 +399,16 @@ export function ChannelsLayout({ currentUser, allChannels, memberOf, activeView,
         <TopBar
           title={activeChannel ? `${activeChannel.emoji||"💬"} #${activeChannel.name}` : dmUser ? `💬 ${dmUser.name}` : "Channels"}
           subtitle={activeChannel?.description || (dmUser?"Direct Message":"Pick a channel or start a DM")}
+          left={
+            <button
+              onClick={() => setShowMobileNav(true)}
+              className="sm:hidden flex items-center gap-1.5 px-2 py-1.5 rounded-lg transition-colors hover:bg-muted/30"
+              style={{ marginRight: 4 }}
+              aria-label="Switch channel"
+            >
+              <LayoutList size={18} style={{ color: "hsl(var(--crimson))" }} />
+            </button>
+          }
           right={activeView?.type==="channel" && isMember ? (
             <button onClick={()=>setShowInvite((activeView as any).id)} className="btn-outline" style={{ fontSize:"0.68rem" }}>
               <UserPlus size={12}/> Invite
@@ -571,6 +582,88 @@ export function ChannelsLayout({ currentUser, allChannels, memberOf, activeView,
                 await renameChannel(showRename.id,renName,renEmoji,renDesc);
                 setShowRename(null);router.refresh();
               }} className="btn-primary">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Mobile Channel Drawer ─── */}
+      {showMobileNav && (
+        <div className="fixed inset-0 z-50 sm:hidden flex flex-col" style={{ background: "rgba(0,0,0,0.6)" }}
+          onClick={() => setShowMobileNav(false)}>
+          <div className="mt-auto rounded-t-2xl overflow-hidden flex flex-col"
+            style={{ background: "hsl(var(--card))", maxHeight: "80vh" }}
+            onClick={e => e.stopPropagation()}>
+            {/* Handle */}
+            <div className="flex justify-center pt-3 pb-1">
+              <div className="w-10 h-1 rounded-full" style={{ background: "hsl(var(--border))" }} />
+            </div>
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+              <h2 className="heading-sm" style={{ fontSize: "1rem" }}>Channels & DMs</h2>
+              <button onClick={() => setShowMobileNav(false)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-muted/30">
+                <X size={18} />
+              </button>
+            </div>
+            {/* Scrollable list */}
+            <div className="overflow-y-auto flex-1 pb-6">
+              {myChannels.length > 0 && (
+                <>
+                  <p className="label-caps px-5 pt-4 pb-2" style={{ fontSize: "0.6rem", opacity: 0.5 }}>Channels</p>
+                  {myChannels.map(ch => {
+                    const isActive = activeView?.type === "channel" && (activeView as any).id === ch.id;
+                    return (
+                      <button key={ch.id}
+                        onClick={() => { go({ type: "channel", id: ch.id }); setShowMobileNav(false); }}
+                        className="w-full flex items-center gap-3 px-5 py-3 text-left transition-colors active:bg-muted/20"
+                        style={{ background: isActive ? "hsl(var(--crimson)/0.08)" : "transparent", borderLeft: `3px solid ${isActive ? "hsl(var(--crimson))" : "transparent"}` }}>
+                        <span style={{ fontSize: "1.2rem" }}>{ch.emoji || "💬"}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-sm truncate" style={{ fontFamily: "'Barlow',sans-serif", color: isActive ? "hsl(var(--crimson))" : "hsl(var(--foreground))" }}>
+                            #{ch.name}
+                          </p>
+                          {ch.description && (
+                            <p className="text-xs truncate" style={{ color: "hsl(var(--muted-foreground))", fontFamily: "'Barlow',sans-serif" }}>{ch.description}</p>
+                          )}
+                        </div>
+                        {ch.type === "private" && <Lock size={12} className="text-muted-foreground flex-shrink-0" />}
+                        {isActive && <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: "hsl(var(--crimson))" }} />}
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+              {/* DMs */}
+              {allUsers.filter(u => u.id !== currentUser.id).length > 0 && (
+                <>
+                  <p className="label-caps px-5 pt-4 pb-2" style={{ fontSize: "0.6rem", opacity: 0.5 }}>Direct Messages</p>
+                  {allUsers.filter(u => u.id !== currentUser.id).slice(0, 15).map(u => {
+                    const isActive = activeView?.type === "dm" && (activeView as any).userId === u.id;
+                    return (
+                      <button key={u.id}
+                        onClick={() => { go({ type: "dm", userId: u.id }); setShowMobileNav(false); }}
+                        className="w-full flex items-center gap-3 px-5 py-3 text-left transition-colors active:bg-muted/20"
+                        style={{ background: isActive ? "hsl(var(--crimson)/0.08)" : "transparent", borderLeft: `3px solid ${isActive ? "hsl(var(--crimson))" : "transparent"}` }}>
+                        <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold text-white"
+                          style={{ background: "hsl(var(--crimson))", fontFamily: "'Barlow Condensed',sans-serif", fontWeight: 800 }}>
+                          {(u.name || "?")[0].toUpperCase()}
+                        </div>
+                        <p className="font-medium text-sm" style={{ fontFamily: "'Barlow',sans-serif", color: isActive ? "hsl(var(--crimson))" : "hsl(var(--foreground))" }}>
+                          {u.name}
+                        </p>
+                        {isActive && <div className="ml-auto w-2 h-2 rounded-full" style={{ background: "hsl(var(--crimson))" }} />}
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+              {/* Create new */}
+              <div className="px-5 pt-4">
+                <button onClick={() => { setShowCreate(true); setShowMobileNav(false); }}
+                  className="w-full btn-primary justify-center" style={{ padding: "0.7rem" }}>
+                  <Plus size={15} /> New Channel
+                </button>
+              </div>
             </div>
           </div>
         </div>
