@@ -24,7 +24,6 @@ export async function GET() {
       id: users.id,
       name: users.name,
       email: users.email,
-      avatarUrl: users.avatarUrl,
       role: users.role,
       status: presence.status,
       lastSeenAt: presence.lastSeenAt,

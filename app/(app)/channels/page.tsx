@@ -21,7 +21,7 @@ export default async function ChannelsPage({
   // All data in parallel — using raw SQL so it ALWAYS works regardless of Drizzle schema
   const [channelsRows, allUsersRows, membershipsRows] = await Promise.all([
     sql`SELECT id, name, description, emoji, type, created_by as "createdBy" FROM channels WHERE archived_at IS NULL ORDER BY name`,
-    sql`SELECT id, full_name as name, avatar_url as "avatarUrl" FROM users LIMIT 100`,
+    sql`SELECT id, full_name as name FROM users LIMIT 100`.then((r:any[]) => r.map(u => ({...u, avatarUrl: null}))),  // No avatar - saves MB of payload
     sql`SELECT channel_id as "channelId" FROM channel_members WHERE user_id = ${session.user.id}`,
   ]);
 
@@ -50,9 +50,9 @@ export default async function ChannelsPage({
       WHERE m.channel_id = ${activeChannelId}
         AND m.deleted_at IS NULL
       ORDER BY m.created_at DESC
-      LIMIT 80
+      LIMIT 60
     `;
-    initialMessages = [...rows].reverse().map((r: any) => ({ ...r, attachments: "[]" }));
+    initialMessages = [...rows].reverse().map((r: any) => ({ ...r, attachments: "[]", userAvatar: null, fromAvatar: null }));
   }
 
   // Pending invites

@@ -36,12 +36,15 @@ function viewKey(v: View) {
 // ─── Avatar ───────────────────────────────────────────────────────────────────
 function Avatar({ name, avatar, size=8 }: { name:string; avatar?:string|null; size?:number }) {
   const sz = `${size*4}px`;
-  if (avatar?.startsWith("data:") || avatar?.startsWith("http"))
-    return <img src={avatar} alt={name} style={{ width:sz, height:sz, borderRadius:"50%", objectFit:"cover", flexShrink:0 }} />;
+  // Only use avatar if it's a URL (not base64 — those are huge and slow)
+  if (avatar?.startsWith("http")) {
+    return <img src={avatar} alt={name} style={{ width:sz, height:sz, borderRadius:"50%", objectFit:"cover", flexShrink:0 }} loading="lazy" />;
+  }
+  // Initials fallback — fast, no network request
   const colors = ["hsl(352 80% 42%)","hsl(200 80% 42%)","hsl(142 71% 38%)","hsl(38 90% 48%)","hsl(270 65% 52%)"];
   const bg = colors[(name?.charCodeAt(0)||0) % colors.length];
   return (
-    <div style={{ width:sz, height:sz, borderRadius:"50%", background:bg, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Barlow Condensed',sans-serif", fontWeight:800, fontSize:`${size*0.45}rem`, color:"white" }}>
+    <div style={{ width:sz, height:sz, borderRadius:"50%", background:bg, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Barlow Condensed',sans-serif", fontWeight:800, fontSize:`${size*0.45}rem`, color:"white", letterSpacing:"-0.02em" }}>
       {(name||"?")[0].toUpperCase()}
     </div>
   );
@@ -170,11 +173,12 @@ export function ChannelsLayout({ currentUser, allChannels, memberOf, activeView,
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [msgs.length]);
 
-  // Poll for new messages every 3s
+  // Poll for new messages — 5s visible, paused when hidden
   useEffect(() => {
     if (!activeView) return;
     const key = vKey;
     const tick = async () => {
+      if (document.hidden) return; // Don't poll when tab is hidden
       const curr = msgsRef.current;
       const real = curr.filter(m => !m.id.startsWith("opt-"));
       const last = real[real.length-1];
@@ -196,7 +200,7 @@ export function ChannelsLayout({ currentUser, allChannels, memberOf, activeView,
         });
       } catch {}
     };
-    const id = setInterval(tick, 3000);
+    const id = setInterval(tick, 5000);
     return () => clearInterval(id);
   }, [vKey]); // eslint-disable-line
 
