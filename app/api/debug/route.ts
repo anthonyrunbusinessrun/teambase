@@ -9,12 +9,12 @@ export async function GET(req: NextRequest) {
 
   const sql = postgres(process.env.DATABASE_URL!, { ssl: "require", max: 1 });
   try {
-    const [cols, allMsgs, channels] = await Promise.all([
-      sql`SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'channel_messages' ORDER BY ordinal_position`,
-      sql`SELECT id, channel_id, body, created_at, deleted_at, parent_id FROM channel_messages ORDER BY created_at DESC LIMIT 20`,
-      sql`SELECT id, name, emoji FROM channels ORDER BY name`,
+    const [userCols, msgCols, sampleUser] = await Promise.all([
+      sql`SELECT column_name FROM information_schema.columns WHERE table_name = 'users' ORDER BY ordinal_position`,
+      sql`SELECT column_name FROM information_schema.columns WHERE table_name = 'channel_messages' ORDER BY ordinal_position`,
+      sql`SELECT * FROM users LIMIT 1`,
     ]);
-    return NextResponse.json({ cols, channels, allMsgs, totalMsgs: allMsgs.length });
+    return NextResponse.json({ userCols, msgCols, sampleUser });
   } finally {
     await sql.end();
   }
