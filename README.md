@@ -196,3 +196,4 @@ npx shadcn@latest add toast
 ```
 
 Components install into `components/ui/` as owned source files.
+# Birdy AI Copilot
