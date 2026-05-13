@@ -2,6 +2,6 @@
 buildCommand = "npm run build"
 
 [deploy]
-startCommand = "npm run db:push && npm run start"
+startCommand = "npm run db:push 2>/dev/null || true && npm run start"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
