@@ -271,6 +271,8 @@ export const userProfiles = pgTable(
     bio: text("bio"),
     phone: text("phone"),
     location: text("location"),
+    motto: text("motto"),
+    memberId: text("member_id"),
     avatarUrl: text("avatar_url"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   }

@@ -6,7 +6,7 @@ import { Camera, Save, User, Briefcase, MapPin, Phone, FileText, Loader2 } from 
 
 interface Props {
   userId: string; email: string;
-  currentName: string; currentPosition: string; currentBio: string;
+  currentName: string; currentPosition: string; currentBio: string; currentMotto: string;
   currentPhone: string; currentLocation: string; currentAvatar: string | null;
 }
 
@@ -16,7 +16,7 @@ function getAvatarSrc(userId: string, name: string, avatarUrl: string | null): s
   return `https://api.dicebear.com/8.x/notionists/svg?seed=${seed}&backgroundColor=c41230,1B3A6B&scale=80`;
 }
 
-export function ProfileForm({ userId, email, currentName, currentPosition, currentBio, currentPhone, currentLocation, currentAvatar }: Props) {
+export function ProfileForm({ userId, email, currentName, currentPosition, currentBio, currentPhone, currentLocation, currentAvatar, currentMotto }: Props) {
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,7 +26,7 @@ export function ProfileForm({ userId, email, currentName, currentPosition, curre
 
   const [form, setForm] = useState({
     name: currentName, positionTitle: currentPosition,
-    bio: currentBio, phone: currentPhone, location: currentLocation,
+    bio: currentBio, phone: currentPhone, location: currentLocation, motto: currentMotto || "",
   });
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -126,6 +126,11 @@ export function ProfileForm({ userId, email, currentName, currentPosition, curre
           <label className="field-label flex items-center gap-1"><FileText size={10} /> Bio</label>
           <textarea className="field-input resize-none" rows={3} value={form.bio}
             onChange={e => setForm(p => ({ ...p, bio: e.target.value }))} placeholder="Brief description about yourself…" />
+        </div>
+        <div>
+          <label className="field-label">Personal Motto</label>
+          <input type="text" className="field-input" value={form.motto}
+            onChange={e => setForm(p => ({ ...p, motto: e.target.value }))} placeholder="A quote or phrase that defines you…" />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>

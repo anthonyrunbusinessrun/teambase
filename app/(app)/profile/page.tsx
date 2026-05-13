@@ -38,6 +38,7 @@ export default async function ProfilePage() {
             currentPhone={profile?.phone || ""}
             currentLocation={profile?.location || ""}
             currentAvatar={user?.avatarUrl || profile?.avatarUrl || null}
+            currentMotto={profile?.motto || ""}
           />
           <PasswordSection />
         </div>

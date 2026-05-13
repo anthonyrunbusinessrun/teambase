@@ -33,7 +33,6 @@ export async function createChannel(name: string, description: string, emoji: st
   }).catch(() => 
     db.insert(channelMessages).values({ channelId: id, userId: user.id, body: `👋 #${name} created` })
   );
-  revalidatePath("/channels");
   return id;
 }
 
@@ -161,7 +160,6 @@ export async function deleteChannel(channelId: string) {
   const user = await getUser();
   // Only creator or admin can delete
   await db.delete(channels).where(and(eq(channels.id, channelId), eq(channels.createdBy, user.id)));
-  revalidatePath("/channels");
 }
 
 export async function renameChannel(channelId: string, newName: string, newEmoji: string, newDescription: string) {
@@ -173,5 +171,4 @@ export async function renameChannel(channelId: string, newName: string, newEmoji
       description: newDescription || null,
     })
     .where(and(eq(channels.id, channelId), eq(channels.createdBy, user.id)));
-  revalidatePath("/channels");
 }

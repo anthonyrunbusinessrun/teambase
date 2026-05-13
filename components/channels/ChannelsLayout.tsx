@@ -127,6 +127,7 @@ export function ChannelsLayout({ currentUser, allChannels, memberOf, activeView,
 
   // Core state
   const [msgs, setMsgs]           = useState<Msg[]>(initialMessages);
+  const [channelList, setChannelList] = useState<Channel[]>(allChannels);
   const [input, setInput]         = useState("");
   const [sending, setSending]     = useState(false);
   const [sendErr, setSendErr]     = useState<string|null>(null);
@@ -158,10 +159,10 @@ export function ChannelsLayout({ currentUser, allChannels, memberOf, activeView,
   msgsRef.current = msgs;
 
   // Derived
-  const activeChannel = activeView?.type==="channel" ? allChannels.find(c=>c.id===(activeView as any).id) : null;
+  const activeChannel = activeView?.type==="channel" ? channelList.find(c=>c.id===(activeView as any).id) : null;
   const dmUser        = activeView?.type==="dm"      ? allUsers.find(u=>u.id===(activeView as any).userId) : null;
   const isMember      = activeView?.type==="channel" ? localMember.has((activeView as any).id) : true;
-  const myChannels    = allChannels.filter(c => localMember.has(c.id));
+  const myChannels    = channelList.filter(c => localMember.has(c.id));
 
   // Sync server-provided messages when channel changes
   useEffect(() => {
@@ -354,7 +355,7 @@ export function ChannelsLayout({ currentUser, allChannels, memberOf, activeView,
                             <div className="absolute left-0 top-6 z-30 card-base border border-border shadow-xl rounded-lg overflow-hidden min-w-[140px]" onClick={e=>e.stopPropagation()}>
                               <button onClick={()=>{setRenName(ch.name);setRenEmoji(ch.emoji||"💬");setRenDesc(ch.description||"");setShowRename(ch);setShowMenu(null);}}
                                 className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted/30 text-left"><Pencil size={12}/>Rename</button>
-                              <button onClick={async()=>{if(confirm(`Delete #${ch.name}? Cannot be undone.`)){await deleteChannel(ch.id);setShowMenu(null);router.push("/channels");}}}
+                              <button onClick={async()=>{if(confirm(`Delete #${ch.name}? Cannot be undone.`)){await deleteChannel(ch.id);setChannelList(p=>p.filter(x=>x.id!==ch.id));setShowMenu(null);setLocalMember(p=>{const n=new Set(p);n.delete(ch.id);return n;});if(activeView?.type==="channel"&&(activeView as any).id===ch.id){go(null as any);}}}}
                                 className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted/30 text-left" style={{ color:"hsl(var(--crimson))" }}><Trash2 size={12}/>Delete</button>
                             </div>
                           )}
@@ -535,6 +536,8 @@ export function ChannelsLayout({ currentUser, allChannels, memberOf, activeView,
               <button onClick={async()=>{
                 if(!newName)return;
                 const id=await createChannel(newName,newDesc,newEmoji,newPriv);
+                const newCh: Channel = { id, name:newName.toLowerCase().replace(/\s+/g,"-"), description:newDesc||null, emoji:newEmoji||"💬", type:newPriv?"private":"public", createdBy:currentUser.id };
+                setChannelList(p=>[...p,newCh].sort((a,b)=>a.name.localeCompare(b.name)));
                 setLocalMember(p=>new Set([...p,id]));
                 setShowCreate(false);setNewName("");setNewDesc("");setNewEmoji("💬");setNewPriv(false);
                 go({type:"channel",id});
@@ -580,7 +583,8 @@ export function ChannelsLayout({ currentUser, allChannels, memberOf, activeView,
               <button onClick={async()=>{
                 if(!renName)return;
                 await renameChannel(showRename.id,renName,renEmoji,renDesc);
-                setShowRename(null);router.refresh();
+                setChannelList(p=>p.map(ch=>ch.id===showRename.id?{...ch,name:renName,emoji:renEmoji,description:renDesc||null}:ch));
+                setShowRename(null);
               }} className="btn-primary">Save</button>
             </div>
           </div>

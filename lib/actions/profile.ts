@@ -14,6 +14,7 @@ const profileSchema = z.object({
   bio: z.string().max(500).optional(),
   phone: z.string().max(30).optional(),
   location: z.string().max(100).optional(),
+  motto: z.string().max(200).optional(),
 });
 
 async function getUser() {
@@ -28,9 +29,10 @@ export async function updateProfile(formData: {
   bio?: string;
   phone?: string;
   location?: string;
+  motto?: string;
 }) {
   const user = await getUser();
-  const data = profileSchema.parse(formData);
+  const data = profileSchema.parse({ ...formData, motto: formData.motto });
 
   // Update user name
   await db.update(users).set({
@@ -45,6 +47,7 @@ export async function updateProfile(formData: {
     bio: data.bio || null,
     phone: data.phone || null,
     location: data.location || null,
+    motto: (formData.motto || null) as any,
     updatedAt: new Date(),
   }).onConflictDoUpdate({
     target: userProfiles.userId,
@@ -53,6 +56,7 @@ export async function updateProfile(formData: {
       bio: data.bio || null,
       phone: data.phone || null,
       location: data.location || null,
+      motto: (formData.motto || null) as any,
       updatedAt: new Date(),
     },
   });
