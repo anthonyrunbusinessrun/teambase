@@ -1,6 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
 import { Sidebar } from "./Sidebar";
+import dynamic from "next/dynamic";
+const BirdyButton = dynamic(() => import("@/components/birdy/BirdyButton"), { ssr: false });
 
 interface Task { id: string; title: string; dueDate: string; priority: string; }
 
@@ -44,6 +46,7 @@ export function ClientLayout({
       <div className="main-content" style={{ display: "flex", flexDirection: "column" }}>
         {children}
       </div>
+    <BirdyButton />
     </div>
   );
 }

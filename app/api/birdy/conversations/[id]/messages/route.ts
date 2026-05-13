@@ -1,0 +1,14 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { auth } from '@/lib/auth'
+import { headers } from 'next/headers'
+import { getMessages } from '@/lib/birdy/sql'
+
+export const dynamic = 'force-dynamic'
+
+export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const messages = await getMessages(params.id, session.user.id)
+  if (messages === null) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  return NextResponse.json({ messages: messages.map(m => ({ ...m, role: m.role })) })
+}
