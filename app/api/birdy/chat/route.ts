@@ -4,7 +4,10 @@ import { headers } from 'next/headers'
 import { checkRateLimit, getRateLimitIdentifier } from '@/lib/birdy/rate-limiter'
 import { routeMessage } from '@/lib/birdy/router'
 import { buildSystemPrompt, detectModule } from '@/lib/birdy/prompt'
-import { createConversation, getConversation, getMessageHistory, saveMessage, logUsage } from '@/lib/birdy/sql'
+import {
+  createConversation, getConversation, getMessageHistory,
+  saveMessage, logUsage
+} from '@/lib/birdy/sql'
 
 export const runtime    = 'nodejs'
 export const dynamic    = 'force-dynamic'
@@ -15,16 +18,13 @@ const enc      = new TextEncoder()
 const sse      = (o: object) => enc.encode(`data: ${JSON.stringify(o)}\n\n`)
 
 export async function POST(req: NextRequest) {
-  // Auth
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const userId = session.user.id
 
-  // Rate limit
-  const rl = checkRateLimit(getRateLimitIdentifier(req), { limit: 10, windowMs: 60_000 })
+  const rl = checkRateLimit(getRateLimitIdentifier(req), { limit: 15, windowMs: 60_000 })
   if (!rl.allowed) return NextResponse.json({ error: 'Rate limit reached.' }, { status: 429 })
 
-  // Parse
   let body: { message?: unknown; conversationId?: unknown; pageModule?: unknown; actionKey?: unknown }
   try { body = await req.json() } catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }) }
 
@@ -33,15 +33,13 @@ export async function POST(req: NextRequest) {
 
   const msg  = message.trim().slice(0, 16_000)
   const cid  = typeof conversationId === 'string' ? conversationId.trim() : null
-  const mod  = typeof pageModule      === 'string' ? pageModule : '/'
-  const akey = typeof actionKey       === 'string' ? actionKey  : undefined
+  const mod  = typeof pageModule === 'string' ? pageModule : '/'
+  const akey = typeof actionKey  === 'string' ? actionKey  : undefined
 
-  // Dedup
   const dedupKey = `${userId}:${cid ?? 'new'}:${msg.slice(0, 40)}`
   if (inFlight.has(dedupKey)) return NextResponse.json({ error: 'Already in progress' }, { status: 409 })
   inFlight.add(dedupKey)
 
-  // Conversation
   let convId: string
   try {
     if (!cid) {
@@ -54,54 +52,94 @@ export async function POST(req: NextRequest) {
     }
   } catch { inFlight.delete(dedupKey); return NextResponse.json({ error: 'DB error' }, { status: 503 }) }
 
-  // History + context
-  const history = await getMessageHistory(convId).catch(() => [])
-  const pageCtx = detectModule(mod)
+  // Parallel: history + routing (routing probes Ollama/vLLM health concurrently)
+  const [history, routing] = await Promise.all([
+    getMessageHistory(convId).catch(() => []),
+    routeMessage(msg),
+  ])
+
+  const pageCtx    = detectModule(mod)
   const systemPrompt = buildSystemPrompt({ pageContext: pageCtx })
 
-  // Save user message
   await saveMessage({ conversationId: convId, role: 'USER', content: msg, actionKey: akey }).catch(console.error)
 
-  // Route
-  const routing = routeMessage(msg)
   const messagesForAI = [...history, { role: 'user' as const, content: msg }]
-  let fullContent = ''
-  const t0 = Date.now()
+  let   fullContent   = ''
+  const t0            = Date.now()
 
   const stream = new ReadableStream({
     async start(ctrl) {
       const send = (o: object) => { try { ctrl.enqueue(sse(o)) } catch {} }
-      send({ conversationId: convId, model: routing.provider.modelName, intent: routing.intent })
 
-      const tryProvider = async (provider: typeof routing.provider) => {
+      send({
+        conversationId: convId,
+        model:          routing.provider.modelName,
+        provider:       routing.provider.providerName,
+        intent:         routing.intent,
+        selfHosted:     routing.selfHosted,
+      })
+
+      // Walk the priority chain — try each provider until one succeeds
+      let succeeded = false
+      let usedProvider = routing.provider
+
+      for (const provider of routing.chain) {
+        if (!(await provider.isAvailable())) continue
         fullContent = ''
-        for await (const chunk of provider.stream(messagesForAI, systemPrompt)) {
-          if (chunk.error) throw new Error(chunk.error)
-          if (chunk.delta) { fullContent += chunk.delta; send({ delta: chunk.delta }) }
-          if (chunk.done) return
+        try {
+          for await (const chunk of provider.stream(messagesForAI, systemPrompt)) {
+            if (chunk.error) throw new Error(chunk.error)
+            if (chunk.delta) { fullContent += chunk.delta; send({ delta: chunk.delta }) }
+            if (chunk.done) { succeeded = true; usedProvider = provider; break }
+          }
+          if (succeeded) break
+        } catch (err) {
+          // Provider failed mid-stream — try next
+          console.warn(`[birdy/chat] ${provider.modelName} failed, trying next:`, (err as Error).message)
+          fullContent = ''
+          continue
         }
       }
 
-      let status: 'success' | 'error' | 'fallback' = 'success'
-      try { await tryProvider(routing.provider) }
-      catch {
-        if (routing.fallback !== routing.provider) {
-          status = 'fallback'
-          try { await tryProvider(routing.fallback) }
-          catch { status = 'error'; send({ error: 'AI unavailable', done: true }); ctrl.close(); inFlight.delete(dedupKey); return }
-        } else { status = 'error'; send({ error: 'AI unavailable', done: true }); ctrl.close(); inFlight.delete(dedupKey); return }
+      if (!succeeded) {
+        send({ error: 'All AI providers are currently unavailable. Please check Ollama is running and models are pulled.', done: true })
+        ctrl.close(); inFlight.delete(dedupKey); return
       }
 
-      const latencyMs = Date.now() - t0
+      const latencyMs   = Date.now() - t0
+      const selfHosted  = usedProvider.providerType !== 'anthropic'
+
       if (fullContent.trim()) {
-        saveMessage({ conversationId: convId, role: 'ASSISTANT', content: fullContent, modelUsed: routing.provider.modelName, provider: routing.provider.providerName, actionKey: akey, latencyMs }).catch(console.error)
+        saveMessage({
+          conversationId: convId, role: 'ASSISTANT', content: fullContent,
+          modelUsed: usedProvider.modelName, provider: usedProvider.providerName,
+          actionKey: akey, latencyMs,
+        }).catch(console.error)
       }
-      logUsage({ userId, conversationId: convId, provider: routing.provider.providerName, model: routing.provider.modelName, intent: routing.intent, tokensOut: Math.ceil(fullContent.length / 4), latencyMs, status, pageModule: mod, actionKey: akey }).catch(console.error)
 
-      send({ done: true }); ctrl.close(); inFlight.delete(dedupKey)
+      logUsage({
+        userId, conversationId: convId,
+        provider:  usedProvider.providerName,
+        model:     usedProvider.modelName,
+        intent:    routing.intent,
+        tokensOut: Math.ceil(fullContent.length / 4),
+        latencyMs,
+        status:    selfHosted ? 'success' : 'claude-fallback',
+        pageModule: mod, actionKey: akey,
+      }).catch(console.error)
+
+      send({ done: true, selfHosted })
+      ctrl.close(); inFlight.delete(dedupKey)
     },
     cancel() { inFlight.delete(dedupKey) },
   })
 
-  return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no', 'Connection': 'keep-alive' } })
+  return new Response(stream, {
+    headers: {
+      'Content-Type':      'text/event-stream',
+      'Cache-Control':     'no-store',
+      'X-Accel-Buffering': 'no',
+      'Connection':        'keep-alive',
+    },
+  })
 }
